@@ -62,9 +62,42 @@ final class ChannelIndex {
     // (United States) parses to several MB of Foundation objects.
     private var loadedCode: String?
     private var loadedChannels: [Channel] = []
+    private var dirCache: String?
 
+    // Where a refreshed catalogue lands. The bundle is read-only, so a refresh
+    // cannot replace what shipped in the IPA — it writes here instead, and this
+    // then takes precedence.
+    static var refreshedDir: String {
+        let dirs = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)
+        let docs = dirs.first ?? NSTemporaryDirectory()
+        return (docs as NSString).appendingPathComponent("index")
+    }
+
+    static var hasRefreshedIndex: Bool {
+        return FileManager.default.fileExists(atPath: refreshedDir + "/countries.json")
+    }
+
+    // A refreshed index wins over the bundled one, but only if its manifest is
+    // actually there. A half-written directory — refresh killed mid-build,
+    // device out of space — must not shadow a perfectly good bundled index and
+    // leave the app showing an empty country list with no way back.
     private var dir: String {
-        return (Bundle.main.resourcePath ?? "") + "/index"
+        if let d = dirCache { return d }
+        let d = ChannelIndex.hasRefreshedIndex ? ChannelIndex.refreshedDir
+                                               : (Bundle.main.resourcePath ?? "") + "/index"
+        dirCache = d
+        return d
+    }
+
+    // Called after a refresh swaps the directory, so the next read sees the new
+    // files rather than the manifest and country parsed from the old ones.
+    func reset() {
+        queue.async {
+            self.loadedCode = nil
+            self.loadedChannels = []
+        }
+        dirCache = nil
+        countryCache = nil
     }
 
     // countries.json is a few KB; parsing it on the main thread is cheaper

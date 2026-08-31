@@ -35,13 +35,25 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
         table.separatorColor = UIColor(white: 0.2, alpha: 1)
         view.addSubview(table)
 
+        // The debug log moved inside Settings — it was only ever a bar button
+        // because there was nowhere else to put it.
         navigationItem.rightBarButtonItem =
-            UIBarButtonItem(title: "Log", style: .plain, target: self, action: #selector(showLog))
+            UIBarButtonItem(title: "Settings", style: .plain, target: self,
+                            action: #selector(showSettings))
         CrashReport.stage("root-vc-ready")
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // A refresh can have replaced the whole catalogue while Settings was
+        // open, so re-read the manifest rather than just redrawing: `all` would
+        // otherwise still hold the countries of the index that was swapped out.
+        let latest = ChannelIndex.shared.countries()
+        if latest.count != all.count {
+            all = latest
+            search.text = nil
+            shown = all
+        }
         // The favourites count changes while the user is inside the player.
         table.reloadData()
         if let sel = table.indexPathForSelectedRow { table.deselectRow(at: sel, animated: true) }
@@ -57,8 +69,10 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
                                         + " Its log follows.")
     }
 
-    @objc private func showLog() {
-        LogViewController.present(from: self, text: DebugLog.shared.readAll(), banner: nil)
+    @objc private func showSettings() {
+        let nav = UINavigationController(rootViewController: SettingsViewController())
+        nav.navigationBar.barStyle = .black
+        present(nav, animated: true, completion: nil)
     }
 
     // MARK: - Table

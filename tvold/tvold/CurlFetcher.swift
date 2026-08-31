@@ -11,29 +11,51 @@ private let curlDataWriteCallback: @convention(c) (UnsafeRawPointer?, Int, Int, 
     return bytes
 }
 
-// Accumulates a file download into an open FileHandle, passed via userdata.
+// Writes a file download straight to a file descriptor passed via userdata.
+//
+// A raw POSIX fd, not a FileHandle: the Foundation file-write overlay kills the
+// process mid-write on the shipped 5.1.5 runtime. See DebugLog and LogoCache,
+// which were moved off it for the same reason.
 private let curlFileWriteCallback: @convention(c) (UnsafeRawPointer?, Int, Int, UnsafeMutableRawPointer?) -> Int = { ptr, size, nmemb, userdata in
     guard let ptr = ptr, let userdata = userdata else { return 0 }
     let bytes = size * nmemb
     let box = Unmanaged<CurlDownloadBox>.fromOpaque(userdata).takeUnretainedValue()
-    box.fileHandle?.write(Data(bytes: ptr, count: bytes))
+    guard box.fd >= 0 else { return 0 }
+    // Returning short tells libcurl the write failed and aborts the transfer,
+    // which is what should happen if the disk is full.
+    guard write(box.fd, ptr, bytes) == bytes else { return 0 }
     box.bytesReceived += Int64(bytes)
     return bytes
 }
 
-// Reports download progress (0...1) back to the main thread.
+// Reports download progress (0...1) back to the main thread, and is also the
+// only place a transfer in progress can be cancelled: returning non-zero makes
+// libcurl abort. libcurl calls this even before the size is known, so the
+// cancel check has to come before the dltotal guard.
 private let curlProgressCallback: @convention(c) (UnsafeMutableRawPointer?, Int64, Int64, Int64, Int64) -> Int32 = { clientp, dltotal, dlnow, _, _ in
-    guard let clientp = clientp, dltotal > 0 else { return 0 }
+    guard let clientp = clientp else { return 0 }
     let box = Unmanaged<CurlDownloadBox>.fromOpaque(clientp).takeUnretainedValue()
+    if box.cancelled { return 1 }
+    guard dltotal > 0 else { return 0 }
     let progress = Float(dlnow) / Float(dltotal)
     DispatchQueue.main.async { box.progressHandler?(progress) }
     return 0
 }
 
 private class CurlDownloadBox {
-    var fileHandle: FileHandle?
+    var fd: Int32 = -1
     var bytesReceived: Int64 = 0
     var progressHandler: ((Float) -> Void)?
+    // Set from the main thread while the transfer runs on a background queue.
+    // A plain Bool: the read is a single word and a late observation only costs
+    // one more progress tick before the transfer stops.
+    var cancelled = false
+}
+
+// Opaque handle letting a caller abort a download it has already started.
+final class CurlDownloadToken {
+    fileprivate weak var box: CurlDownloadBox?
+    func cancel() { box?.cancelled = true }
 }
 
 // MARK: - CurlFetcher
@@ -108,20 +130,25 @@ class CurlFetcher {
     }
 
     // Download url -> local file with progress, on the dedicated download queue;
-    // completion on the main thread. Used by DownloadManager.
+    // completion on the main thread. The returned token can cancel it.
+    @discardableResult
     static func downloadToFile(url: String,
                                outputPath: String,
+                               timeout: Int = 0,
                                progress: ((Float) -> Void)?,
-                               completion: @escaping (Bool) -> Void) {
+                               completion: @escaping (Bool) -> Void) -> CurlDownloadToken {
         let fetcher = CurlFetcher()
+        let token = CurlDownloadToken()
         retain(fetcher)
         CurlFetcher.downloadQueue.async {
-            let ok = fetcher.syncDownload(url: url, outputPath: outputPath, progress: progress)
+            let ok = fetcher.syncDownload(url: url, outputPath: outputPath,
+                                          timeout: timeout, progress: progress, token: token)
             DispatchQueue.main.async {
                 release(fetcher)
                 completion(ok)
             }
         }
+        return token
     }
 
     // MARK: - Lifecycle management
@@ -200,38 +227,46 @@ class CurlFetcher {
         return buf as Data
     }
 
-    // No CURLOPT_TIMEOUT (secs: 0 = unbounded) — movie downloads can run far longer
-    // than an API call, and a total-time cap would abort a large file mid-transfer.
-    private func syncDownload(url: String, outputPath: String, progress: ((Float) -> Void)?) -> Bool {
+    // timeout 0 means no CURLOPT_TIMEOUT at all — a total-time cap would abort a
+    // large file mid-transfer on a slow connection, so callers fetching
+    // something open-ended leave it at 0 and rely on cancellation instead.
+    private func syncDownload(url: String, outputPath: String, timeout: Int,
+                              progress: ((Float) -> Void)?, token: CurlDownloadToken) -> Bool {
         _ = CurlFetcher.curlGlobalInit
         let h = curl_bridge_init()
         defer { curl_bridge_cleanup(h) }
 
-        FileManager.default.createFile(atPath: outputPath, contents: nil, attributes: nil)
-        guard let fh = FileHandle(forWritingAtPath: outputPath) else { return false }
+        let fd = open(outputPath, O_WRONLY | O_CREAT | O_TRUNC, 0o644)
+        guard fd >= 0 else { return false }
         let box = CurlDownloadBox()
-        box.fileHandle = fh
+        box.fd = fd
         box.progressHandler = progress
+        token.box = box
         let boxPtr = Unmanaged.passUnretained(box).toOpaque()
 
         url.withCString { curl_bridge_set_url(h, $0) }
         curl_bridge_set_ssl_noverify(h)
         curl_bridge_set_follow_redirects(h)
-        curl_bridge_set_timeout(h, 0)
+        curl_bridge_set_timeout(h, CLong(timeout))
         curl_bridge_set_write_fn(h, curlFileWriteCallback, boxPtr)
-        if progress != nil { curl_bridge_set_progress_fn(h, curlProgressCallback, boxPtr) }
+        // Always installed, not just when there is a progress handler — it is
+        // also the cancellation hook.
+        curl_bridge_set_progress_fn(h, curlProgressCallback, boxPtr)
 
         let rc = curl_bridge_perform(h)
-        fh.closeFile()
-        guard rc == 0 else {
+        close(fd)
+        box.fd = -1
+
+        // A partial file is worse than none: the next stage would parse it and
+        // report corrupt data rather than a failed download.
+        func fail() -> Bool {
             try? FileManager.default.removeItem(atPath: outputPath)
             return false
         }
+        guard rc == 0 else { return fail() }
         let code = curl_bridge_response_code(h)
-        guard code >= 200, code < 300 else {
-            try? FileManager.default.removeItem(atPath: outputPath)
-            return false
-        }
-        return box.bytesReceived > 0
+        guard code >= 200, code < 300 else { return fail() }
+        guard box.bytesReceived > 0 else { return fail() }
+        return true
     }
 }

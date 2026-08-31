@@ -28,6 +28,28 @@
 		BB3100FF /* index in Resources */ = {isa = PBXBuildFile; fileRef = BB3000FF /* index */; };
 		BB5EF8301EAE /* CrashReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4EF8301EAE /* CrashReport.swift */; };
 		BB57F91267E4 /* LogViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB47F91267E4 /* LogViewController.swift */; };
+		BB5D2D61AB4A /* JSONArrayStream.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4D2D61AB4A /* JSONArrayStream.swift */; };
+		BB5EFCFE2F5C /* IndexBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4EFCFE2F5C /* IndexBuilder.swift */; };
+		BB5DB6F8F418 /* CatalogRefresh.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4DB6F8F418 /* CatalogRefresh.swift */; };
+		BB57E2C40C2A /* SettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB47E2C40C2A /* SettingsViewController.swift */; };
+		BB51C371751C /* Icons/Icon-Small.png in Resources */ = {isa = PBXBuildFile; fileRef = BB41C371751C /* Icons/Icon-Small.png */; };
+		BB5F390B2F8A /* Icons/Icon-Small@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4F390B2F8A /* Icons/Icon-Small@2x.png */; };
+		BB5891FADE29 /* Icons/Icon-Small@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4891FADE29 /* Icons/Icon-Small@3x.png */; };
+		BB5B74AC0099 /* Icons/Icon-Small-50.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4B74AC0099 /* Icons/Icon-Small-50.png */; };
+		BB5965879DEC /* Icons/Icon-Small-50@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4965879DEC /* Icons/Icon-Small-50@2x.png */; };
+		BB5196AFBD9A /* Icons/Icon-57.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4196AFBD9A /* Icons/Icon-57.png */; };
+		BB53D658FF61 /* Icons/Icon-57@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB43D658FF61 /* Icons/Icon-57@2x.png */; };
+		BB57F8A7D4C3 /* Icons/Icon-60@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB47F8A7D4C3 /* Icons/Icon-60@2x.png */; };
+		BB5042FD5408 /* Icons/Icon-60@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4042FD5408 /* Icons/Icon-60@3x.png */; };
+		BB583DD60911 /* Icons/Icon-72.png in Resources */ = {isa = PBXBuildFile; fileRef = BB483DD60911 /* Icons/Icon-72.png */; };
+		BB5FBAC287AC /* Icons/Icon-72@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4FBAC287AC /* Icons/Icon-72@2x.png */; };
+		BB523721A79E /* Icons/Icon-76.png in Resources */ = {isa = PBXBuildFile; fileRef = BB423721A79E /* Icons/Icon-76.png */; };
+		BB5FEF8DFC35 /* Icons/Icon-76@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4FEF8DFC35 /* Icons/Icon-76@2x.png */; };
+		BB5B9CAFEAA6 /* Icons/Icon-83.5@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4B9CAFEAA6 /* Icons/Icon-83.5@2x.png */; };
+		BB5B621010FF /* Icons/Icon-Notification-20@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4B621010FF /* Icons/Icon-Notification-20@2x.png */; };
+		BB5B176BBF07 /* Icons/Icon-Notification-20@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4B176BBF07 /* Icons/Icon-Notification-20@3x.png */; };
+		BB5D33E952B3 /* Icons/Icon-Spotlight-40@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4D33E952B3 /* Icons/Icon-Spotlight-40@2x.png */; };
+		BB5D393B2E9C /* Icons/Icon-Spotlight-40@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4D393B2E9C /* Icons/Icon-Spotlight-40@3x.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +96,28 @@
 		BB3000FF /* index */ = {isa = PBXFileReference; lastKnownFileType = folder; path = index; sourceTree = "<group>"; };
 		BB4EF8301EAE /* CrashReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrashReport.swift; sourceTree = "<group>"; };
 		BB47F91267E4 /* LogViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogViewController.swift; sourceTree = "<group>"; };
+		BB4D2D61AB4A /* JSONArrayStream.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONArrayStream.swift; sourceTree = "<group>"; };
+		BB4EFCFE2F5C /* IndexBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndexBuilder.swift; sourceTree = "<group>"; };
+		BB4DB6F8F418 /* CatalogRefresh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogRefresh.swift; sourceTree = "<group>"; };
+		BB47E2C40C2A /* SettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsViewController.swift; sourceTree = "<group>"; };
+		BB41C371751C /* Icons/Icon-Small.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Small.png"; sourceTree = "<group>"; };
+		BB4F390B2F8A /* Icons/Icon-Small@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Small@2x.png"; sourceTree = "<group>"; };
+		BB4891FADE29 /* Icons/Icon-Small@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Small@3x.png"; sourceTree = "<group>"; };
+		BB4B74AC0099 /* Icons/Icon-Small-50.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Small-50.png"; sourceTree = "<group>"; };
+		BB4965879DEC /* Icons/Icon-Small-50@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Small-50@2x.png"; sourceTree = "<group>"; };
+		BB4196AFBD9A /* Icons/Icon-57.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-57.png"; sourceTree = "<group>"; };
+		BB43D658FF61 /* Icons/Icon-57@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-57@2x.png"; sourceTree = "<group>"; };
+		BB47F8A7D4C3 /* Icons/Icon-60@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-60@2x.png"; sourceTree = "<group>"; };
+		BB4042FD5408 /* Icons/Icon-60@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-60@3x.png"; sourceTree = "<group>"; };
+		BB483DD60911 /* Icons/Icon-72.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-72.png"; sourceTree = "<group>"; };
+		BB4FBAC287AC /* Icons/Icon-72@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-72@2x.png"; sourceTree = "<group>"; };
+		BB423721A79E /* Icons/Icon-76.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-76.png"; sourceTree = "<group>"; };
+		BB4FEF8DFC35 /* Icons/Icon-76@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-76@2x.png"; sourceTree = "<group>"; };
+		BB4B9CAFEAA6 /* Icons/Icon-83.5@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-83.5@2x.png"; sourceTree = "<group>"; };
+		BB4B621010FF /* Icons/Icon-Notification-20@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Notification-20@2x.png"; sourceTree = "<group>"; };
+		BB4B176BBF07 /* Icons/Icon-Notification-20@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Notification-20@3x.png"; sourceTree = "<group>"; };
+		BB4D33E952B3 /* Icons/Icon-Spotlight-40@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Spotlight-40@2x.png"; sourceTree = "<group>"; };
+		BB4D393B2E9C /* Icons/Icon-Spotlight-40@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Spotlight-40@3x.png"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +168,28 @@
 		A34362D42FD764210064ADE1 /* tvold */ = {
 			isa = PBXGroup;
 			children = (
+				BB41C371751C /* Icons/Icon-Small.png */,
+				BB4F390B2F8A /* Icons/Icon-Small@2x.png */,
+				BB4891FADE29 /* Icons/Icon-Small@3x.png */,
+				BB4B74AC0099 /* Icons/Icon-Small-50.png */,
+				BB4965879DEC /* Icons/Icon-Small-50@2x.png */,
+				BB4196AFBD9A /* Icons/Icon-57.png */,
+				BB43D658FF61 /* Icons/Icon-57@2x.png */,
+				BB47F8A7D4C3 /* Icons/Icon-60@2x.png */,
+				BB4042FD5408 /* Icons/Icon-60@3x.png */,
+				BB483DD60911 /* Icons/Icon-72.png */,
+				BB4FBAC287AC /* Icons/Icon-72@2x.png */,
+				BB423721A79E /* Icons/Icon-76.png */,
+				BB4FEF8DFC35 /* Icons/Icon-76@2x.png */,
+				BB4B9CAFEAA6 /* Icons/Icon-83.5@2x.png */,
+				BB4B621010FF /* Icons/Icon-Notification-20@2x.png */,
+				BB4B176BBF07 /* Icons/Icon-Notification-20@3x.png */,
+				BB4D33E952B3 /* Icons/Icon-Spotlight-40@2x.png */,
+				BB4D393B2E9C /* Icons/Icon-Spotlight-40@3x.png */,
+				BB4D2D61AB4A /* JSONArrayStream.swift */,
+				BB4EFCFE2F5C /* IndexBuilder.swift */,
+				BB4DB6F8F418 /* CatalogRefresh.swift */,
+				BB47E2C40C2A /* SettingsViewController.swift */,
 				BB4EF8301EAE /* CrashReport.swift */,
 				BB47F91267E4 /* LogViewController.swift */,
 				BB300000 /* ChannelIndex.swift */,
@@ -269,6 +335,24 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB51C371751C /* Icons/Icon-Small.png in Resources */,
+				BB5F390B2F8A /* Icons/Icon-Small@2x.png in Resources */,
+				BB5891FADE29 /* Icons/Icon-Small@3x.png in Resources */,
+				BB5B74AC0099 /* Icons/Icon-Small-50.png in Resources */,
+				BB5965879DEC /* Icons/Icon-Small-50@2x.png in Resources */,
+				BB5196AFBD9A /* Icons/Icon-57.png in Resources */,
+				BB53D658FF61 /* Icons/Icon-57@2x.png in Resources */,
+				BB57F8A7D4C3 /* Icons/Icon-60@2x.png in Resources */,
+				BB5042FD5408 /* Icons/Icon-60@3x.png in Resources */,
+				BB583DD60911 /* Icons/Icon-72.png in Resources */,
+				BB5FBAC287AC /* Icons/Icon-72@2x.png in Resources */,
+				BB523721A79E /* Icons/Icon-76.png in Resources */,
+				BB5FEF8DFC35 /* Icons/Icon-76@2x.png in Resources */,
+				BB5B9CAFEAA6 /* Icons/Icon-83.5@2x.png in Resources */,
+				BB5B621010FF /* Icons/Icon-Notification-20@2x.png in Resources */,
+				BB5B176BBF07 /* Icons/Icon-Notification-20@3x.png in Resources */,
+				BB5D33E952B3 /* Icons/Icon-Spotlight-40@2x.png in Resources */,
+				BB5D393B2E9C /* Icons/Icon-Spotlight-40@3x.png in Resources */,
 				BB3100FF /* index in Resources */,
 				A34362D82FD764250064ADE1 /* Assets.xcassets in Resources */,
 				A34363012FD764270064ADE1 /* Default-568h@2x.png in Resources */,
@@ -296,6 +380,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB5D2D61AB4A /* JSONArrayStream.swift in Sources */,
+				BB5EFCFE2F5C /* IndexBuilder.swift in Sources */,
+				BB5DB6F8F418 /* CatalogRefresh.swift in Sources */,
+				BB57E2C40C2A /* SettingsViewController.swift in Sources */,
 				BB5EF8301EAE /* CrashReport.swift in Sources */,
 				BB57F91267E4 /* LogViewController.swift in Sources */,
 				BB310000 /* ChannelIndex.swift in Sources */,

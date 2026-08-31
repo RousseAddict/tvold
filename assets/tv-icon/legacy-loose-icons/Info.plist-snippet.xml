@@ -1,0 +1,46 @@
+<!--
+  Drop the Icon-*.png files from this folder into your app target, then merge
+  these keys into your Info.plist. This is the pre-asset-catalog wiring used
+  by projects still supporting iOS 5/6, where icons are loose files rather
+  than an .xcassets AppIcon set.
+
+  UIPrerenderedIcon:
+    - Leave it OUT (or set to false) if you want iOS to apply its classic
+      glass "shine" overlay automatically over icon-master.svg's flat design.
+    - Set it to <true/> if you want the flat, un-glossed look shown in the
+      preview exactly as designed (recommended for a modern-flat TV app icon
+      even on old iOS).
+-->
+<key>CFBundleIcons</key>
+<dict>
+    <key>CFBundlePrimaryIcon</key>
+    <dict>
+        <key>CFBundleIconFiles</key>
+        <array>
+            <string>Icon-Small</string>
+            <string>Icon-Small@2x</string>
+            <string>Icon-Small@3x</string>
+            <string>Icon-Small-50</string>
+            <string>Icon-Small-50@2x</string>
+            <string>Icon-57</string>
+            <string>Icon-57@2x</string>
+            <string>Icon-60@2x</string>
+            <string>Icon-60@3x</string>
+            <string>Icon-72</string>
+            <string>Icon-72@2x</string>
+            <string>Icon-76</string>
+            <string>Icon-76@2x</string>
+            <string>Icon-83.5@2x</string>
+            <string>Icon-Notification-20@2x</string>
+            <string>Icon-Notification-20@3x</string>
+            <string>Icon-Spotlight-40@2x</string>
+            <string>Icon-Spotlight-40@3x</string>
+        </array>
+        <key>UIPrerenderedIcon</key>
+        <true/>
+    </dict>
+</dict>
+
+<!-- Also required pre-asset-catalog so the App Store listing picks up an icon: -->
+<key>CFBundleIconFile</key>
+<string>Icon-57</string>

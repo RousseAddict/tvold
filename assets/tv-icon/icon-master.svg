@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Flat black square background. Do NOT bake in rounded corners or a gloss/highlight —
+       old iOS (pre-iOS 7) applies its own corner mask and, unless the app sets
+       UIPrerenderedIcon = YES in Info.plist, its own glass "shine" overlay
+       automatically at render time. Baking either in yourself typically results
+       in double-rounding or a double-gloss look on-device. -->
+  <rect x="0" y="0" width="1024" height="1024" fill="#000000"/>
+
+  <!-- Phosphor "tv-simple" (television-simple, bold weight) glyph, recolored
+       and centered. Source glyph is on a 256x256 grid; scaled + centered
+       within a ~60% safe area (614px) per classic iOS icon guidance, which
+       is more generous than modern iOS since old icons had smaller system
+       corner-radius/inset masks. -->
+  <g transform="translate(204,204) scale(2.4)">
+    <path fill="#F5F7FA" d="M216,60H157l27.52-27.52a12,12,0,0,0-17-17L128,55,88.49,15.51a12,12,0,0,0-17,17L99,60H40A20,20,0,0,0,20,80V200a20,20,0,0,0,20,20H216a20,20,0,0,0,20-20V80A20,20,0,0,0,216,60Zm-4,136H44V84H212Z"/>
+    <!-- "OLD", centered inside the screen cutout (screen spans x:44-212, y:84-196
+         in this local 256-unit grid, so center is 128,140). -->
+    <text x="128" y="152" text-anchor="middle"
+          font-family="-apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif"
+          font-weight="700" font-size="42" letter-spacing="1" fill="#F5F7FA">OLD</text>
+  </g>
+</svg>
