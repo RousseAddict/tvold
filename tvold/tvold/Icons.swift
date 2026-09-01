@@ -13,6 +13,8 @@ import UIKit
 // Icon-*.png dance in build.sh), loose PNGs would need an @1x and an @2x each
 // and would still be wrong on a future screen, and a path is sharp at any size
 // while an image is not.
+// Every icon here is *stroked*. A filled path (added for a favourite star, and
+// reverted) crashes on device at first use — see the note on `draw` below.
 enum Icon {
     case skipBack
     case skipForward
@@ -22,10 +24,13 @@ enum Icon {
 
 enum Icons {
 
-    // Everything these are drawn on is the player's black chrome, so the colour
-    // is fixed rather than a parameter the cache would have to key on.
     private static var cache: [String: UIImage] = [:]
 
+    // White is baked in rather than tinted at draw time: `withRenderingMode`
+    // and template images are iOS 7, so a UIImageView here cannot recolour
+    // anything it is given. Everything these icons sit on is dark, so one
+    // colour is all that is needed — and a colour parameter was tried and
+    // removed along with the filled star that motivated it.
     static func image(_ icon: Icon, size: CGFloat) -> UIImage? {
         let key = "\(icon)-\(size)"
         if let cached = cache[key] { return cached }
@@ -34,6 +39,13 @@ enum Icons {
         return img
     }
 
+    // Strokes only. `UIBezierPath.fill()` was used once, for a filled star, and
+    // killed the process the first time it ran on device — the four stroked
+    // icons below had already drawn in the same context moments earlier, so the
+    // context, the path building and the cache are all fine and filling is the
+    // one thing that is not. Cause never pinned down further; it was a
+    // cosmetic detail and not worth more device cycles. If a filled shape is
+    // ever wanted here, treat it as unproven and bisect it on device first.
     private static func draw(_ icon: Icon, size: CGFloat) -> UIImage? {
         UIGraphicsBeginImageContextWithOptions(CGSize(width: size, height: size), false, 0)
         defer { UIGraphicsEndImageContext() }

@@ -1,7 +1,34 @@
 import UIKit
 
+// How the country list is ordered. Persisted because it is a standing
+// preference, not a per-visit choice, and it is set from a different screen.
+enum CountrySort: Int {
+    case count = 0   // the manifest's own order
+    case name = 1
+
+    private static let key = "countrySort"
+
+    static var current: CountrySort {
+        get { return CountrySort(rawValue: UserDefaults.standard.integer(forKey: key)) ?? .count }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: key) }
+    }
+
+    var label: String {
+        return self == .count ? "Most channels first" : "Alphabetical"
+    }
+
+    // The manifest is already ordered by channel count with ties broken on
+    // country code, in both the Python and the on-device builder — so `.count`
+    // leaves it alone rather than re-sorting it with an unstable sort and
+    // getting a different order than the one that shipped.
+    func apply(_ list: [Country]) -> [Country] {
+        guard self == .name else { return list }
+        return list.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+}
+
 // Root screen: favourites shortcut on top, then every country in the
-// catalogue ordered by channel count (the manifest is pre-sorted).
+// catalogue, ordered by channel count or by name.
 final class CountriesViewController: UIViewController, UITableViewDataSource,
                                      UITableViewDelegate, UISearchBarDelegate {
 
@@ -10,6 +37,7 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
     private var all: [Country] = []
     private var shown: [Country] = []
     private var shownCrashLog = false
+    private var appliedSort = CountrySort.current
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -17,7 +45,7 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
         view.backgroundColor = UIColor.black
 
         CrashReport.stage("loading-countries")
-        all = ChannelIndex.shared.countries()
+        all = appliedSort.apply(ChannelIndex.shared.countries())
         shown = all
         CrashReport.stage("countries-loaded-\(all.count)")
 
@@ -46,10 +74,12 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // A refresh can have replaced the whole catalogue while Settings was
-        // open, so re-read the manifest rather than just redrawing: `all` would
-        // otherwise still hold the countries of the index that was swapped out.
-        let latest = ChannelIndex.shared.countries()
-        if latest.count != all.count {
+        // open, and so can the sort order — so re-read the manifest rather than
+        // just redrawing: `all` would otherwise still hold the countries of the
+        // index that was swapped out.
+        let latest = CountrySort.current.apply(ChannelIndex.shared.countries())
+        if latest.count != all.count || CountrySort.current != appliedSort {
+            appliedSort = CountrySort.current
             all = latest
             search.text = nil
             shown = all

@@ -20,10 +20,18 @@ final class PlayerViewController: UIViewController {
     private let chrome = UIView()
     private let bottomBar = UIView()
     private let nameLabel = UILabel()
+    private let positionLabel = UILabel()
     private let statusLabel = UILabel()
+    private let busy = UIActivityIndicatorView(style: .whiteLarge)
     private let favButton = UIButton(type: .custom)
     private var hideTimer: Timer?
     private var connectTimer: Timer?
+
+    // Set when a channel has given up, cleared by the next play(). While it is
+    // set the chrome does not auto-hide: there is nothing behind it to look at,
+    // and hiding it is how the user ends up staring at black with no controls
+    // and no explanation of what went wrong.
+    private var failed = false
 
     // Whether the current channel ever reached a playable state. A live stream
     // that drops after an hour reports the same playback error as one that was
@@ -51,6 +59,12 @@ final class PlayerViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // The player is where this app has always been most likely to die, and
+        // until now the stage log stopped at 'root-visible' — every crash from
+        // here on looked identical. These four stages bisect the open path:
+        // chrome construction, icon drawing, and the handoff to
+        // MPMoviePlayerController each get their own marker.
+        CrashReport.stage("player-open")
         view.backgroundColor = UIColor.black
 
         // Gestures live on a transparent layer of our own, not on `view`.
@@ -80,6 +94,7 @@ final class PlayerViewController: UIViewController {
 
         // After the touch layer, so the chrome ends up above it.
         buildChrome()
+        CrashReport.stage("player-chrome")
         play()
     }
 
@@ -125,15 +140,29 @@ final class PlayerViewController: UIViewController {
         close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         chrome.addSubview(close)
 
-        nameLabel.frame = CGRect(x: 52, y: 4, width: w - 52 - 48, height: 36)
+        nameLabel.frame = CGRect(x: 52, y: 4, width: w - 52 - 48 - 58, height: 36)
         nameLabel.autoresizingMask = [.flexibleWidth]
         nameLabel.textColor = UIColor.white
         nameLabel.font = UIFont.boldSystemFont(ofSize: 14)
         nameLabel.backgroundColor = UIColor.clear
         chrome.addSubview(nameLabel)
 
+        // Where this channel sits in the list being zapped through. Without it
+        // a swipe gives no sense of how far along the list you are, or that it
+        // wraps around at the end.
+        positionLabel.frame = CGRect(x: w - 48 - 58, y: 4, width: 58, height: 36)
+        positionLabel.autoresizingMask = [.flexibleLeftMargin]
+        positionLabel.textColor = UIColor(white: 0.6, alpha: 1)
+        positionLabel.font = UIFont.systemFont(ofSize: 11)
+        positionLabel.textAlignment = .right
+        positionLabel.backgroundColor = UIColor.clear
+        chrome.addSubview(positionLabel)
+
         favButton.frame = CGRect(x: w - 44, y: 4, width: 40, height: 36)
         favButton.autoresizingMask = [.flexibleLeftMargin]
+        // A glyph rather than a drawn path: the grid cell's star is the same
+        // character in the same colour, so the two screens agree, and a drawn
+        // star is what crashed the player on device.
         favButton.titleLabel?.font = UIFont.systemFont(ofSize: 22)
         favButton.setTitleColor(UIColor.yellow, for: .normal)
         favButton.addTarget(self, action: #selector(toggleFavorite), for: .touchUpInside)
@@ -151,12 +180,24 @@ final class PlayerViewController: UIViewController {
         addBarButton(.skipForward, label: "Next channel", x: w - 88, width: 80,
                      action: #selector(zapNext))
 
-        statusLabel.frame = CGRect(x: 8, y: 48, width: w - 16, height: 20)
-        statusLabel.autoresizingMask = [.flexibleWidth]
-        statusLabel.textColor = UIColor(white: 0.8, alpha: 1)
-        statusLabel.font = UIFont.systemFont(ofSize: 12)
+        // Centred on the screen and deliberately *not* part of the chrome: when
+        // a stream fails the movie view is torn down and the screen is black,
+        // and the one thing that must survive the chrome auto-hiding is the
+        // sentence explaining why.
+        statusLabel.frame = CGRect(x: 20, y: h / 2 - 8, width: w - 40, height: 60)
+        statusLabel.autoresizingMask = [.flexibleWidth, .flexibleTopMargin, .flexibleBottomMargin]
+        statusLabel.textColor = UIColor.white
+        statusLabel.font = UIFont.systemFont(ofSize: 15)
+        statusLabel.textAlignment = .center
+        statusLabel.numberOfLines = 3
         statusLabel.backgroundColor = UIColor.clear
         view.addSubview(statusLabel)
+
+        busy.center = CGPoint(x: w / 2, y: h / 2 - 32)
+        busy.autoresizingMask = [.flexibleLeftMargin, .flexibleRightMargin,
+                                 .flexibleTopMargin, .flexibleBottomMargin]
+        busy.hidesWhenStopped = true
+        view.addSubview(busy)
     }
 
     // The button stays 80pt wide with a 28pt icon centred in it: the icon is
@@ -179,10 +220,12 @@ final class PlayerViewController: UIViewController {
 
     private func setChrome(hidden: Bool) {
         hideTimer?.invalidate()
-        chrome.isHidden = hidden
-        bottomBar.isHidden = hidden
-        statusLabel.isHidden = hidden
-        if !hidden {
+        // A failed channel keeps its controls: Retry, Next and Close are the
+        // only things left to do, and they are the only things on screen.
+        let hide = hidden && !failed
+        chrome.isHidden = hide
+        bottomBar.isHidden = hide
+        if !hide && !failed {
             hideTimer = Timer.scheduledTimer(timeInterval: 5, target: self,
                                              selector: #selector(autoHide), userInfo: nil,
                                              repeats: false)
@@ -205,9 +248,10 @@ final class PlayerViewController: UIViewController {
     }
 
     private func updateFavButton() {
-        // Filled star when favourited, hollow when not.
-        favButton.setTitle(Favorites.shared.contains(current) ? "\u{2605}" : "\u{2606}",
-                           for: .normal)
+        // Solid star when favourited, hollow when not.
+        let fav = Favorites.shared.contains(current)
+        favButton.setTitle(fav ? "\u{2605}" : "\u{2606}", for: .normal)
+        favButton.accessibilityLabel = fav ? "Remove from favourites" : "Add to favourites"
     }
 
     @objc private func zapNext() { zap(1) }
@@ -225,17 +269,21 @@ final class PlayerViewController: UIViewController {
 
     private func play() {
         nameLabel.text = current.name
+        positionLabel.text = channels.count > 1 ? "\(index + 1) / \(channels.count)" : nil
+        CrashReport.stage("player-labels")
         updateFavButton()
-        setChrome(hidden: false)
+        CrashReport.stage("player-icons")
+        failed = false
         becamePlayable = false
+        setChrome(hidden: false)
 
         tearDownPlayer()
 
         guard let remote = URL(string: current.url) else {
-            status("Bad stream URL")
+            fail("Bad stream URL")
             return
         }
-        status("Connecting\u{2026}")
+        working("Connecting\u{2026}")
 
         // start() bumps the proxy generation, which aborts any transfer still
         // running for the previous channel — otherwise a stuck segment fetch
@@ -246,7 +294,7 @@ final class PlayerViewController: UIViewController {
         }
 
         guard let p = MPMoviePlayerController(contentURL: url) else {
-            status("Player unavailable")
+            fail("Player unavailable")
             return
         }
         p.view.frame = view.bounds
@@ -264,6 +312,7 @@ final class PlayerViewController: UIViewController {
                        name: .MPMoviePlayerPlaybackDidFinish, object: p)
 
         p.prepareToPlay()
+        CrashReport.stage("player-preparing")
         connectTimer = Timer.scheduledTimer(timeInterval: PlayerViewController.connectTimeout,
                                             target: self, selector: #selector(connectTimedOut),
                                             userInfo: nil, repeats: false)
@@ -274,12 +323,12 @@ final class PlayerViewController: UIViewController {
               !(p.loadState.contains(.playable) || p.loadState.contains(.playthroughOK))
         else { return }
         tearDownPlayer()
-        setChrome(hidden: false)
         // Watching a channel is the most reliable liveness check there is, so
         // every play records its verdict — the explicit scan only exists to
         // fill in the channels nobody has opened.
         StreamStatus.markDead(current.url)
-        status("No response after \(Int(PlayerViewController.connectTimeout))s — try Next")
+        fail("No response after \(Int(PlayerViewController.connectTimeout))s.\n"
+             + "This channel looks dead — try Next, or Retry if you think it isn't.")
     }
 
     private func tearDownPlayer() {
@@ -292,8 +341,24 @@ final class PlayerViewController: UIViewController {
     }
 
     private func status(_ text: String) {
-        statusLabel.text = text
+        statusLabel.text = text.isEmpty ? nil : text
         DebugLog.shared.log("Player", "\(current.name): \(text)")
+    }
+
+    // Something is happening and the wait is expected: spinner plus a word for
+    // what it is waiting on.
+    private func working(_ text: String) {
+        busy.startAnimating()
+        status(text)
+    }
+
+    // Nothing more will happen on its own. The message stays put and the chrome
+    // stops auto-hiding until the next channel.
+    private func fail(_ text: String) {
+        busy.stopAnimating()
+        failed = true
+        status(text)
+        setChrome(hidden: false)
     }
 
     @objc private func loadStateChanged() {
@@ -304,10 +369,15 @@ final class PlayerViewController: UIViewController {
             connectTimer?.invalidate()
             connectTimer = nil
             becamePlayable = true
+            failed = false
+            busy.stopAnimating()
             StreamStatus.markAlive(current.url)
             status("")
+            // Restarts the auto-hide the failure state suppressed, so a stream
+            // that recovers does not keep its controls up over the video.
+            setChrome(hidden: false)
         } else if p.loadState.contains(.stalled) {
-            status("Buffering\u{2026}")
+            working("Buffering\u{2026}")
         }
     }
 
@@ -317,7 +387,7 @@ final class PlayerViewController: UIViewController {
         // 0 = ended, 1 = user exited, 2 = playback error.
         guard raw == 2 || raw == 0 else { return }
         if raw == 2 && !becamePlayable { StreamStatus.markDead(current.url) }
-        setChrome(hidden: false)
-        status(raw == 2 ? "Stream unavailable — try Next" : "Stream ended")
+        fail(raw == 2 ? "Stream unavailable.\nTry Next, or Retry to try again."
+                      : "Stream ended.\nTry Retry, or Next for another channel.")
     }
 }

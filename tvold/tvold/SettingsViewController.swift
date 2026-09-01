@@ -26,9 +26,11 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
     private static let confirmRevert = 2
 
     private enum Section: Int {
-        case catalogue, refresh, diagnostics, about
-        static let count = 4
+        case catalogue, sorting, refresh, diagnostics, about
+        static let count = 5
     }
+
+    private static let sortOptions: [CountrySort] = [.count, .name]
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -45,7 +47,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
 
         buildHeader()
 
-        navigationItem.leftBarButtonItem =
+        navigationItem.rightBarButtonItem =
             UIBarButtonItem(barButtonSystemItem: .done, target: self, action: #selector(close))
     }
 
@@ -192,6 +194,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
         // "16745 channels, 178 countries" on the left and a date on the right
         // has no room left for either.
         case .catalogue: return 3
+        case .sorting: return SettingsViewController.sortOptions.count
         // The revert row only exists once there is something to revert to.
         case .refresh: return ChannelIndex.hasRefreshedIndex && !running ? 2 : 1
         case .diagnostics: return 2
@@ -202,6 +205,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         switch Section(rawValue: section)! {
         case .catalogue: return "Catalogue"
+        case .sorting: return "Country list"
         case .refresh: return nil
         case .diagnostics: return "Diagnostics"
         case .about: return nil
@@ -240,6 +244,13 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
                 cell.textLabel?.text = "Updated"
                 cell.detailTextLabel?.text = sourceDescription()
             }
+
+        case .sorting:
+            cell.selectionStyle = .blue
+            let option = SettingsViewController.sortOptions[indexPath.row]
+            cell.textLabel?.text = option.label
+            cell.detailTextLabel?.text = nil
+            cell.accessoryType = option == CountrySort.current ? .checkmark : .none
 
         case .refresh:
             cell.selectionStyle = .blue
@@ -318,6 +329,12 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
         tableView.deselectRow(at: indexPath, animated: true)
         CrashReport.stage("settings-row-\(indexPath.section)-\(indexPath.row)")
         switch Section(rawValue: indexPath.section)! {
+        case .sorting:
+            // The root screen re-reads this in viewWillAppear, so the list is
+            // already reordered by the time Done gets the user back to it.
+            CountrySort.current = SettingsViewController.sortOptions[indexPath.row]
+            tableView.reloadSections(IndexSet(integer: indexPath.section), with: .none)
+
         case .refresh:
             if indexPath.row == 0 {
                 if running {

@@ -113,12 +113,10 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
         super.viewDidLoad()
         view.backgroundColor = UIColor.black
 
-        search.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 44)
         search.placeholder = "Search channels"
         search.delegate = self
         search.barStyle = .black
         search.autoresizingMask = [.flexibleWidth]
-        view.addSubview(search)
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Check", style: .plain,
                                                             target: self,
@@ -129,17 +127,38 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
         layout.minimumLineSpacing = 8
         layout.sectionInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
 
-        grid = UICollectionView(frame: CGRect(x: 0, y: 44, width: view.bounds.width,
-                                              height: view.bounds.height - 44),
-                                collectionViewLayout: layout)
+        grid = UICollectionView(frame: view.bounds, collectionViewLayout: layout)
         grid.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         grid.backgroundColor = UIColor.black
         grid.dataSource = self
         grid.delegate = self
         grid.register(ChannelCell.self, forCellWithReuseIdentifier: ChannelCell.reuseID)
+
+        // A 44pt hole is reserved at the top of the grid's content and the
+        // search bar is slid to follow the scroll into it, so it scrolls away
+        // like the country list's tableHeaderView does rather than costing 44
+        // of the 416 points a 3.5-inch screen has — most of a row of tiles.
+        //
+        // The bar is a *sibling* of the grid, never a subview of it. A
+        // UICollectionView has no tableHeaderView, and both ways of putting one
+        // inside lose the keyboard mid-word: a section header is recycled by
+        // `reloadData`, and a plain subview does not survive it either — and
+        // reloadData runs on every keystroke. Outside the grid, nothing
+        // reloadData does can reach it.
+        grid.contentInset = UIEdgeInsets(top: 44, left: 0, bottom: 0, right: 0)
+        grid.scrollIndicatorInsets = grid.contentInset
+        grid.contentOffset = CGPoint(x: 0, y: -44)
+
+        // An empty view goes in ahead of the grid so the grid is not the root
+        // view's *first* subview. iOS 7 auto-adjusts the content inset of a
+        // scroll view in that position for the navigation bar, which would
+        // overwrite the 44 set above and leave the search bar over the tiles.
+        // Anything visible would be hidden behind the opaque grid, so this is
+        // deliberately a view with nothing in it.
+        view.addSubview(UIView(frame: CGRect.zero))
         view.addSubview(grid)
 
-        empty.frame = grid.frame
+        empty.frame = view.bounds
         empty.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         empty.textAlignment = .center
         empty.textColor = UIColor(white: 0.5, alpha: 1)
@@ -152,6 +171,11 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
         spinner.autoresizingMask = [.flexibleTopMargin, .flexibleBottomMargin,
                                     .flexibleLeftMargin, .flexibleRightMargin]
         view.addSubview(spinner)
+
+        // Added last so it stays above the grid and the empty-state label as it
+        // slides. Its y is owned by scrollViewDidScroll from here on.
+        search.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 44)
+        view.addSubview(search)
 
         if let code = code {
             spinner.startAnimating()
@@ -262,6 +286,14 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
 
     // LogoCache drops requests once its backlog is full, so cells that came
     // and went during a fast scroll need to ask again once things settle.
+    // Keeps the search bar glued to the top of the grid's content: flush with
+    // the navigation bar when the grid is at rest, sliding up out of sight as
+    // the grid scrolls, and back on a pull down. The 44 cancels the content
+    // inset, so at rest (contentOffset.y == -44) the bar sits at y == 0.
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        search.frame.origin.y = -44 - scrollView.contentOffset.y
+    }
+
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         reconfigureVisible()
     }
