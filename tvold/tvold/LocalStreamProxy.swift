@@ -358,7 +358,18 @@ final class LocalStreamProxy: NSObject {
                     || trimmed.hasPrefix("#EXT-X-VERSION") {
                     DebugLog.shared.log("Proxy", "PLAYLIST \(path) | \(trimmed)")
                 }
-                return line
+                // A tag can carry a URI in an attribute instead of on a line of
+                // its own — #EXT-X-MEDIA for alternate audio or subtitles,
+                // #EXT-X-KEY for an AES key, #EXT-X-MAP for an fMP4 init
+                // segment. These used to be passed through untouched, so the
+                // player resolved them against 127.0.0.1 and got a 404; a key
+                // URI was worse still, since it sent the player at the origin
+                // over the very TLS stack this proxy exists to avoid.
+                guard let withLocalURI = rewriteURIAttribute(line, baseURL: baseURL,
+                                                             gen: gen, headers: route.headers)
+                else { return line }
+                uriCount += 1
+                return withLocalURI
             }
             uriCount += 1
             guard let resolved = URL(string: trimmed, relativeTo: baseURL)?.absoluteURL else { return line }
@@ -369,6 +380,32 @@ final class LocalStreamProxy: NSObject {
         }
         DebugLog.shared.log("Proxy", "PLAYLIST \(path) rewrote \(uriCount) URI(s) in \(ms(since: t0))ms")
         return Data(rewritten.joined(separator: "\n").utf8)
+    }
+
+    // Replaces the URI="..." attribute of a tag line with a local proxy path,
+    // or returns nil when the line carries no such attribute — which is the
+    // overwhelmingly common case, since this runs on every comment line of a
+    // playlist that can hold 1000+ #EXTINF tags. NSString's search is the same
+    // C-level call the hasPrefix checks above already pay for.
+    private func rewriteURIAttribute(_ line: String, baseURL: URL, gen: UInt64,
+                                     headers: [String: String]) -> String? {
+        let s = line as NSString
+        let key = s.range(of: "URI=\"")
+        guard key.location != NSNotFound else { return nil }
+        let start = key.location + key.length
+        let close = s.range(of: "\"", options: [],
+                            range: NSRange(location: start, length: s.length - start))
+        guard close.location != NSNotFound else { return nil }
+        let value = NSRange(location: start, length: close.location - start)
+        guard value.length > 0,
+              let resolved = URL(string: s.substring(with: value), relativeTo: baseURL)?.absoluteURL
+        else { return nil }
+        // Same inheritance rule as a bare URI line: an alternate rendition is
+        // served by the origin that demanded the parent's headers.
+        let local = registerPath(for: resolved,
+                                 isPlaylist: LocalStreamProxy.isPlaylistURL(resolved),
+                                 gen: gen, headers: headers)
+        return s.replacingCharacters(in: value, with: local)
     }
 
     // Drops #EXT-X-STREAM-INF variants (and their URI line) whose RESOLUTION
