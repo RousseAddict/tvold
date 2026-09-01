@@ -126,10 +126,7 @@ final class SegmentTranscoder {
         ac3.reserveCapacity(audio.reduce(0) { $0 + $1.payload.count })
         for p in audio { ac3.append(contentsOf: p.payload) }
 
-        // ac3_fixed outputs S16P, so interleaving for the encoder is a copy
-        // rather than a clamp and a scale per sample. Its decode time is within
-        // noise of the float decoder's once compiled at -O.
-        if decoder == nil { decoder = AC3Decoder(fixed: true) }
+        if decoder == nil { decoder = AC3Decoder() }
         guard let dec = decoder else {
             fail("AC3Decoder would not open")
             return nil

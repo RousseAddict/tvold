@@ -24,12 +24,13 @@ final class AC3Decoder {
     // The value is 0x8000000000000000 as a signed 64-bit integer.
     private static let noPTS = Int64.min
 
-    // `fixed` selects FFmpeg's integer AC-3 decoder over the float one. Both are
-    // compiled in so their cost can be compared on device: the float decoder
-    // outputs planar float that has to be converted, the fixed one outputs
-    // planar Int16 that only has to be interleaved.
-    init?(fixed: Bool = false) {
-        let name = fixed ? "ac3_fixed" : "ac3"
+    // `ac3_fixed`, FFmpeg's integer decoder, rather than the float `ac3`: it
+    // outputs planar Int16, so feeding the encoder is an interleave instead of a
+    // clamp and a scale per sample. Both were compiled in and compared on device
+    // at `-O`; the speed difference is within noise, so this is chosen for the
+    // cheaper output format alone.
+    init?() {
+        let name = "ac3_fixed"
         guard let codec = avcodec_find_decoder_by_name(name) else {
             DebugLog.shared.log("AC3", "decoder '\(name)' not in this build")
             return nil
@@ -105,23 +106,9 @@ final class AC3Decoder {
         sampleRate = Int(frame.pointee.sample_rate)
         channels = nch
 
-        // Only the two planar formats the AC-3 decoders actually produce are
-        // handled — anything else means the build changed underneath us.
+        // `ac3_fixed` produces planar Int16 and nothing else — any other format
+        // means the vendored FFmpeg build changed underneath us.
         switch frame.pointee.format {
-        case AV_SAMPLE_FMT_FLTP.rawValue:
-            for s in 0..<samples {
-                for c in 0..<nch {
-                    guard let plane = planes[c] else { continue }
-                    let v = plane.withMemoryRebound(to: Float.self, capacity: samples) {
-                        $0[s]
-                    }
-                    // Clamp: AC-3 float output is nominally -1...1 but can
-                    // overshoot, and wrapping a loud passage into noise is a
-                    // very confusing bug to chase later.
-                    let scaled = max(-1.0, min(1.0, v)) * 32767.0
-                    out.append(Int16(scaled))
-                }
-            }
         case AV_SAMPLE_FMT_S16P.rawValue:
             for s in 0..<samples {
                 for c in 0..<nch {

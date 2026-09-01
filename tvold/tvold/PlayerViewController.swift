@@ -25,6 +25,12 @@ final class PlayerViewController: UIViewController {
     private var hideTimer: Timer?
     private var connectTimer: Timer?
 
+    // Whether the current channel ever reached a playable state. A live stream
+    // that drops after an hour reports the same playback error as one that was
+    // never reachable, so without this a channel could be marked dead on the
+    // strength of having been watched.
+    private var becamePlayable = false
+
     // Roughly half the catalogue is dead at any time, and a dead origin makes
     // MPMoviePlayerController sit silent — no load-state change, no finish
     // notification, nothing to react to. Without a watchdog the UI just says
@@ -221,6 +227,7 @@ final class PlayerViewController: UIViewController {
         nameLabel.text = current.name
         updateFavButton()
         setChrome(hidden: false)
+        becamePlayable = false
 
         tearDownPlayer()
 
@@ -268,6 +275,10 @@ final class PlayerViewController: UIViewController {
         else { return }
         tearDownPlayer()
         setChrome(hidden: false)
+        // Watching a channel is the most reliable liveness check there is, so
+        // every play records its verdict — the explicit scan only exists to
+        // fill in the channels nobody has opened.
+        StreamStatus.markDead(current.url)
         status("No response after \(Int(PlayerViewController.connectTimeout))s — try Next")
     }
 
@@ -292,6 +303,8 @@ final class PlayerViewController: UIViewController {
             // the controls stay up long enough to actually be used.
             connectTimer?.invalidate()
             connectTimer = nil
+            becamePlayable = true
+            StreamStatus.markAlive(current.url)
             status("")
         } else if p.loadState.contains(.stalled) {
             status("Buffering\u{2026}")
@@ -303,6 +316,7 @@ final class PlayerViewController: UIViewController {
                     as? NSNumber)?.intValue ?? -1
         // 0 = ended, 1 = user exited, 2 = playback error.
         guard raw == 2 || raw == 0 else { return }
+        if raw == 2 && !becamePlayable { StreamStatus.markDead(current.url) }
         setChrome(hidden: false)
         status(raw == 2 ? "Stream unavailable — try Next" : "Stream ended")
     }

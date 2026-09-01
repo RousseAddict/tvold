@@ -91,25 +91,17 @@ enum TranscodeProbe {
         ac3.reserveCapacity(audioBytes)
         for p in audio { ac3.append(contentsOf: p.payload) }
 
-        // MARK: Decode — both decoders, so their cost can be compared.
+        // MARK: Decode
         var best: (pcm: [Int16], rate: Int, channels: Int)?
-        // Only the shipping decoder's time counts toward the verdict. ac3_fixed
-        // measured 35% faster than the float one on device and hands back S16P,
-        // which the encoder wants anyway, so that is the one being timed.
         var decodeTime = 0.0
-        for fixed in [false, true] {
-            let name = fixed ? "ac3_fixed" : "ac3"
-            CrashReport.stage("tx-probe-decode-\(name)")
-            guard let dec = AC3Decoder(fixed: fixed) else {
-                out.append("decode \(name): decoder unavailable")
-                continue
-            }
+        CrashReport.stage("tx-probe-decode")
+        if let dec = AC3Decoder() {
             let t2 = CFAbsoluteTimeGetCurrent()
             let pcm = dec.decode(ac3)
             let dt = CFAbsoluteTimeGetCurrent() - t2
             let seconds = dec.channels > 0 && dec.sampleRate > 0
                 ? Double(pcm.count / dec.channels) / Double(dec.sampleRate) : 0
-            let line = "decode \(name): \(pcm.count) samples, \(dec.channels)ch @ "
+            let line = "decode ac3_fixed: \(pcm.count) samples, \(dec.channels)ch @ "
                      + "\(dec.sampleRate)Hz = \(fmt(seconds))s audio in \(fmt(dt))s "
                      + "= \(fmt(seconds / max(dt, 0.001)))x realtime"
             out.append(line)
@@ -117,9 +109,11 @@ enum TranscodeProbe {
             if pcm.isEmpty {
                 out.append("  -> NO PCM.")
             } else {
-                if best == nil { best = (pcm, dec.sampleRate, dec.channels) }
-                if fixed { decodeTime = dt }
+                best = (pcm, dec.sampleRate, dec.channels)
+                decodeTime = dt
             }
+        } else {
+            out.append("decode ac3_fixed: decoder unavailable")
         }
         out.append("")
 

@@ -194,7 +194,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
         case .catalogue: return 3
         // The revert row only exists once there is something to revert to.
         case .refresh: return ChannelIndex.hasRefreshedIndex && !running ? 2 : 1
-        case .diagnostics: return 3
+        case .diagnostics: return 2
         case .about: return 1
         }
     }
@@ -253,8 +253,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
 
         case .diagnostics:
             cell.selectionStyle = .blue
-            cell.textLabel?.text = ["Debug log", "AAC encoder probe",
-                                    "AC-3 transcode probe"][indexPath.row]
+            cell.textLabel?.text = ["Debug log", "AC-3 transcode probe"][indexPath.row]
             cell.detailTextLabel?.text = nil
             cell.accessoryType = .disclosureIndicator
 
@@ -335,8 +334,6 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
             case 0:
                 LogViewController.present(from: self, text: DebugLog.shared.readAll(),
                                           banner: nil)
-            case 1:
-                runProbe("Probing AAC encoder\u{2026}") { AACEncoder.probe() }
             default:
                 runProbe("Fetching M6 segment, transcoding\u{2026}") { TranscodeProbe.run() }
             }

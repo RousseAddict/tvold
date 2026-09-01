@@ -48,11 +48,15 @@ final class ChannelCell: UICollectionViewCell {
         super.prepareForReuse()
         logo.image = nil
         logoURL = nil
+        contentView.alpha = 1
     }
 
     func configure(_ c: Channel) {
         name.text = c.name
         star.isHidden = !Favorites.shared.contains(c)
+        // Dimmed, not hidden: a dead verdict is a hint that can be up to a week
+        // stale, and a stream that came back should still be one tap away.
+        contentView.alpha = StreamStatus.isDead(c.url) ? 0.35 : 1
         logoURL = c.logo
         guard let url = c.logo else {
             logo.image = nil
@@ -84,6 +88,10 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
     private var all: [Channel] = []
     private var shown: [Channel] = []
     private var memTimer: Timer?
+    private var scan: StreamStatus.Token?
+    // The country name, put back when the progress readout that replaced it is
+    // done with the title bar.
+    private var savedTitle: String?
 
     init(countryName: String, code: String) {
         self.code = code
@@ -111,6 +119,10 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
         search.barStyle = .black
         search.autoresizingMask = [.flexibleWidth]
         view.addSubview(search)
+
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Check", style: .plain,
+                                                            target: self,
+                                                            action: #selector(toggleCheck))
 
         let layout = UICollectionViewFlowLayout()
         layout.minimumInteritemSpacing = 8
@@ -172,6 +184,9 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
         super.viewWillDisappear(animated)
         memTimer?.invalidate()
         memTimer = nil
+        // Six sockets of liveness checks would be competing with the segment
+        // fetches of whatever the user just opened.
+        if scan != nil { toggleCheck() }
     }
 
     @objc private func logMemory() {
@@ -181,6 +196,38 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
 
     deinit {
         memTimer?.invalidate()
+        scan?.cancel()
+    }
+
+    // MARK: - Liveness check
+
+    // Checks this screen's channels, or stops a check already running. The
+    // verdicts are recorded as they land, so stopping halfway still leaves the
+    // list better informed than it was.
+    @objc private func toggleCheck() {
+        if let running = scan {
+            running.cancel()
+            endCheck()
+            return
+        }
+        guard !all.isEmpty else { return }
+        savedTitle = title
+        navigationItem.rightBarButtonItem?.title = "Stop"
+        scan = StreamStatus.scan(all, progress: { [weak self] done, total in
+            self?.title = "Checking \(done)/\(total)"
+        }, completion: { [weak self] dead, done in
+            guard let self = self else { return }
+            DebugLog.shared.log("Status", "\(self.savedTitle ?? "?"): \(dead) of \(done) dead")
+            self.endCheck()
+        })
+    }
+
+    private func endCheck() {
+        scan = nil
+        navigationItem.rightBarButtonItem?.title = "Check"
+        if let t = savedTitle { title = t }
+        savedTitle = nil
+        applyFilter(search.text ?? "")
     }
 
     // MARK: - Grid
@@ -260,7 +307,13 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
 
     private func applyFilter(_ text: String) {
         let q = text.trimmingCharacters(in: .whitespaces).lowercased()
-        shown = q.isEmpty ? all : all.filter { $0.name.lowercased().range(of: q) != nil }
+        let matched = q.isEmpty ? all : all.filter { $0.name.lowercased().range(of: q) != nil }
+        // Known-dead channels sink to the bottom. Two filters rather than a
+        // sort: Swift's sort is not stable, and the catalogue's own ordering is
+        // worth keeping within each group.
+        let dead = matched.filter { StreamStatus.isDead($0.url) }
+        shown = dead.isEmpty ? matched
+            : matched.filter { !StreamStatus.isDead($0.url) } + dead
         empty.isHidden = !shown.isEmpty || spinner.isAnimating
         grid.reloadData()
     }

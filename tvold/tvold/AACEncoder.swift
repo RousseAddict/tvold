@@ -9,9 +9,11 @@ import AVFoundation
 // using it. **That assumption was wrong**: the device reports two encoders,
 // software and hardware, and the software one works (6.9x realtime on an A5).
 //
-// What the probe did find is the reverse of what it was looking for: the
-// *hardware* codec is the unusable one. It hangs — twice, in two different
-// places, reporting no error either time. So the encoder ships software-only.
+// Probing found the reverse of what it was looking for: the *hardware* codec is
+// the unusable one. It hangs — twice, in two different places, reporting no
+// error either time. So the encoder asks for the software codec by name and
+// never lets CoreAudio choose. (That probe has since been deleted; the finding
+// is why the code looks like this.)
 final class AACEncoder {
 
     // 1024 PCM frames per AAC packet, fixed by the format.
@@ -53,15 +55,14 @@ final class AACEncoder {
 
     // MARK: - Setup
 
-    // Always asks for a specific codec rather than letting CoreAudio choose,
-    // because CoreAudio choosing means CoreAudio possibly choosing the hardware
-    // one — and on this device that hangs. Measured twice, differently each
-    // time: once `AudioConverterNewSpecific` never returned, once it returned
-    // and then `AudioConverterFillComplexBuffer` never returned. Neither
-    // reports an error, so there is nothing to time out on or recover from.
-    // `preferHardware` therefore defaults to false and exists only so the probe
-    // can keep measuring the thing we refuse to ship.
-    init?(sampleRate: Double, channels: UInt32, preferHardware: Bool = false) {
+    // Always asks for the *software* codec by name rather than letting CoreAudio
+    // choose, because CoreAudio choosing means CoreAudio possibly choosing the
+    // hardware one — and on this device that hangs. Measured twice, differently
+    // each time: once `AudioConverterNewSpecific` never returned, once it
+    // returned and then `AudioConverterFillComplexBuffer` never returned.
+    // Neither reports an error, so there is nothing to time out on or recover
+    // from.
+    init?(sampleRate: Double, channels: UInt32) {
         self.channels = channels
         input.channels = channels
 
@@ -89,10 +90,9 @@ final class AACEncoder {
 
         var conv: AudioConverterRef?
         var status: OSStatus
-        let wanted: UInt32 = preferHardware ? kAppleHardwareAudioCodecManufacturer
-                                            : kAppleSoftwareAudioCodecManufacturer
         var descs = AACEncoder.encoderDescriptions()
-        if let match = descs.firstIndex(where: { $0.mManufacturer == wanted }) {
+        let software = kAppleSoftwareAudioCodecManufacturer
+        if let match = descs.firstIndex(where: { $0.mManufacturer == software }) {
             var one = descs[match]
             status = AudioConverterNewSpecific(&src, &dst, 1, &one, &conv)
         } else {
@@ -100,8 +100,7 @@ final class AACEncoder {
             // pick is how the hardware codec gets selected, and that hangs with
             // no error and no timeout. Failing here is recoverable; hanging is
             // not.
-            DebugLog.shared.log("AAC", "no \(preferHardware ? "hardware" : "software")"
-                                + " AAC encoder among \(descs.count) codec(s)")
+            DebugLog.shared.log("AAC", "no software AAC encoder among \(descs.count) codec(s)")
             return nil
         }
         guard status == noErr, let c = conv else {
@@ -128,7 +127,7 @@ final class AACEncoder {
     }
 
     // Every AAC encoder CoreAudio knows about on this device.
-    static func encoderDescriptions() -> [AudioClassDescription] {
+    private static func encoderDescriptions() -> [AudioClassDescription] {
         var format = kAudioFormatMPEG4AAC
         var size: UInt32 = 0
         guard AudioFormatGetPropertyInfo(kAudioFormatProperty_Encoders,
@@ -147,11 +146,7 @@ final class AACEncoder {
     // Interleaved signed-16 PCM in, raw AAC packets out (no ADTS header — that
     // is added at mux time, where the sample rate and channel config that go in
     // its header are already at hand).
-    // `trace` is set only by the probe. It drops a breadcrumb every few packets
-    // so that a run which never returns still says how far it got — the first
-    // probe on device wedged somewhere inside this function and the single
-    // breadcrumb outside it could not narrow that down at all.
-    func encode(_ pcm: [Int16], trace: String? = nil) -> [Data] {
+    func encode(_ pcm: [Int16]) -> [Data] {
         guard let converter = converter, !pcm.isEmpty else { return [] }
 
         input.pcm?.deallocate()
@@ -176,9 +171,6 @@ final class AACEncoder {
         var iteration = 0
 
         while iteration < maxIterations {
-            if let trace = trace, iteration % 8 == 0 {
-                CrashReport.stage("\(trace)-pkt\(iteration)")
-            }
             iteration += 1
             var packets: UInt32 = 1
             var desc = AudioStreamPacketDescription()
@@ -209,119 +201,7 @@ final class AACEncoder {
         return out
     }
 
-    // MARK: - Probe
-
-    // Runs on the device and reports, in order: which encoders exist, whether a
-    // converter can be created, and whether it actually produces bytes and how
-    // fast. Run it once idle and once with video playing — the second is the
-    // answer that decides the whole AC-3 transcode approach.
-    static func probe(seconds: Double = 2.0, sampleRate: Double = 48000,
-                      channels: UInt32 = 2) -> String {
-        CrashReport.stage("aac-probe-start")
-        var out = ["AAC encoder probe", "=================", ""]
-
-        let descs = encoderDescriptions()
-        out.append("encoders visible: \(descs.count)")
-        for d in descs {
-            let kind: String
-            switch d.mManufacturer {
-            case kAppleHardwareAudioCodecManufacturer: kind = "HARDWARE"
-            case kAppleSoftwareAudioCodecManufacturer: kind = "software"
-            default: kind = "other"
-            }
-            out.append("  \(kind)  type=\(fourCC(OSStatus(bitPattern: d.mType)))"
-                       + " sub=\(fourCC(OSStatus(bitPattern: d.mSubType)))")
-        }
-        if descs.isEmpty {
-            out.append("  none — AudioFormatGetProperty returned nothing")
-        }
-        out.append("")
-        // Logged here and not only in the final report: which encoders exist is
-        // useful even when the run never reaches the end to print one.
-        DebugLog.shared.logNow("AAC", out.joined(separator: "\n"))
-
-        // The session category matters: QA1663 warns that letting the session
-        // mix with other audio can take the hardware encoder away.
-        // Split in two: activation measured 5.6s on device, which is slow enough
-        // to be worth knowing about on its own and slow enough that lumping the
-        // two calls together hides which one paid for it.
-        let session = AVAudioSession.sharedInstance()
-        do {
-            CrashReport.stage("aac-probe-session-category")
-            try session.setCategory(AVAudioSession.Category.playback)
-            CrashReport.stage("aac-probe-session-active")
-            let t = CFAbsoluteTimeGetCurrent()
-            try session.setActive(true)
-            out.append("audio session: playback, active in "
-                       + String(format: "%.2f", CFAbsoluteTimeGetCurrent() - t) + "s")
-        } catch {
-            out.append("audio session: FAILED \(error)")
-        }
-        CrashReport.stage("aac-probe-session-done")
-        out.append("")
-
-        // A 440Hz tone, not silence — an encoder handed pure zeroes can emit
-        // near-empty packets and look like it worked when it did not.
-        let frames = Int(seconds * sampleRate)
-        var pcm = [Int16](repeating: 0, count: frames * Int(channels))
-        for i in 0..<frames {
-            let v = Int16(sin(Double(i) * 2.0 * Double.pi * 440.0 / sampleRate) * 8000.0)
-            for c in 0..<Int(channels) { pcm[i * Int(channels) + c] = v }
-        }
-        out.append("input: \(seconds)s @ \(Int(sampleRate))Hz x\(channels) "
-                   + "= \(pcm.count * 2) bytes PCM")
-        out.append("")
-
-        // Software FIRST. `AudioConverterNewSpecific` for the hardware codec
-        // does not return on this device — it neither succeeds nor reports an
-        // OSStatus, it simply blocks — so a hardware-first order guarantees the
-        // software result is never reached. The software encoder is the one that
-        // matters anyway: it cannot be taken away by the video decoder.
-        for hardware in [false, true] {
-            let label = hardware ? "hardware-preferred" : "software-preferred"
-            let tag = "aac-probe-\(hardware ? "hw" : "sw")"
-            // Each phase gets its own breadcrumb *and* its own log line, written
-            // synchronously. A wedged run produces no report at the end, so the
-            // only evidence it can leave is what it wrote on the way in.
-            CrashReport.stage("\(tag)-new")
-            DebugLog.shared.logNow("AAC", "\(label): creating converter")
-            guard let enc = AACEncoder(sampleRate: sampleRate, channels: channels,
-                                       preferHardware: hardware) else {
-                out.append("\(label): converter FAILED to create")
-                continue
-            }
-            CrashReport.stage("\(tag)-ready")
-            DebugLog.shared.logNow("AAC", "\(label): converter created, encoding")
-            let t0 = CFAbsoluteTimeGetCurrent()
-            let packets = enc.encode(pcm, trace: tag)
-            let dt = CFAbsoluteTimeGetCurrent() - t0
-            CrashReport.stage("\(tag)-encoded")
-            DebugLog.shared.logNow("AAC", "\(label): encode returned "
-                                   + "\(packets.count) packet(s) in "
-                                   + String(format: "%.2f", dt) + "s")
-            let bytes = packets.reduce(0) { $0 + $1.count }
-            let expected = frames / framesPerPacket
-            let summary = "\(label): \(packets.count) packets (expected ~\(expected)), "
-                        + "\(bytes) bytes in \(String(format: "%.2f", dt))s "
-                        + "= \(String(format: "%.1f", seconds / max(dt, 0.001)))x realtime"
-            out.append(summary)
-            // Also logged per-flavour, so a later flavour that blocks forever
-            // cannot take this one's verdict down with it.
-            DebugLog.shared.logNow("AAC", summary)
-            if packets.isEmpty {
-                out.append("  -> NO OUTPUT. This flavour is unusable here.")
-            }
-        }
-
-        out.append("")
-        out.append("resident: \(DebugLog.residentMB())MB")
-        CrashReport.stage("aac-probe-done")
-        let text = out.joined(separator: "\n")
-        DebugLog.shared.logNow("AAC", "probe:\n" + text)
-        return text
-    }
-
-    static func fourCC(_ v: OSStatus) -> String {
+    private static func fourCC(_ v: OSStatus) -> String {
         let n = UInt32(bitPattern: v)
         let chars = [UInt8((n >> 24) & 0xFF), UInt8((n >> 16) & 0xFF),
                      UInt8((n >> 8) & 0xFF), UInt8(n & 0xFF)]
