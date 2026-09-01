@@ -113,14 +113,13 @@ final class PlayerViewController: UIViewController {
         view.addSubview(chrome)
 
         let close = UIButton(type: .custom)
-        close.frame = CGRect(x: 4, y: 4, width: 60, height: 36)
-        close.setTitle("Close", for: .normal)
-        close.setTitleColor(UIColor.white, for: .normal)
-        close.titleLabel?.font = UIFont.boldSystemFont(ofSize: 14)
+        close.frame = CGRect(x: 4, y: 4, width: 44, height: 36)
+        close.setImage(Icons.image(.close, size: 22), for: .normal)
+        close.accessibilityLabel = "Close"
         close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         chrome.addSubview(close)
 
-        nameLabel.frame = CGRect(x: 68, y: 4, width: w - 68 - 48, height: 36)
+        nameLabel.frame = CGRect(x: 52, y: 4, width: w - 52 - 48, height: 36)
         nameLabel.autoresizingMask = [.flexibleWidth]
         nameLabel.textColor = UIColor.white
         nameLabel.font = UIFont.boldSystemFont(ofSize: 14)
@@ -139,9 +138,12 @@ final class PlayerViewController: UIViewController {
         bottomBar.backgroundColor = UIColor(white: 0, alpha: 0.6)
         view.addSubview(bottomBar)
 
-        addBarButton("< Prev", x: 8, width: 80, action: #selector(zapPrevious))
-        addBarButton("Retry", x: (w - 70) / 2, width: 70, action: #selector(retry))
-        addBarButton("Next >", x: w - 88, width: 80, action: #selector(zapNext))
+        addBarButton(.skipBack, label: "Previous channel", x: 8, width: 80,
+                     action: #selector(zapPrevious))
+        addBarButton(.retry, label: "Retry", x: (w - 70) / 2, width: 70,
+                     action: #selector(retry))
+        addBarButton(.skipForward, label: "Next channel", x: w - 88, width: 80,
+                     action: #selector(zapNext))
 
         statusLabel.frame = CGRect(x: 8, y: 48, width: w - 16, height: 20)
         statusLabel.autoresizingMask = [.flexibleWidth]
@@ -151,14 +153,16 @@ final class PlayerViewController: UIViewController {
         view.addSubview(statusLabel)
     }
 
-    private func addBarButton(_ title: String, x: CGFloat, width: CGFloat, action: Selector) {
+    // The button stays 80pt wide with a 28pt icon centred in it: the icon is
+    // what is read, the button is what is hit.
+    private func addBarButton(_ icon: Icon, label: String, x: CGFloat, width: CGFloat,
+                              action: Selector) {
         let b = UIButton(type: .custom)
         b.frame = CGRect(x: x, y: 8, width: width, height: 36)
         b.autoresizingMask = x > view.bounds.width / 2 ? [.flexibleLeftMargin]
             : (x > 8 ? [.flexibleLeftMargin, .flexibleRightMargin] : [.flexibleRightMargin])
-        b.setTitle(title, for: .normal)
-        b.setTitleColor(UIColor.white, for: .normal)
-        b.titleLabel?.font = UIFont.boldSystemFont(ofSize: 14)
+        b.setImage(Icons.image(icon, size: 28), for: .normal)
+        b.accessibilityLabel = label
         b.addTarget(self, action: action, for: .touchUpInside)
         bottomBar.addSubview(b)
     }

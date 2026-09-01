@@ -241,6 +241,23 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
         searchBar.resignFirstResponder()
     }
 
+    // Cancel appears only while editing. The keyboard covers most of a 3.5-inch
+    // screen and the grid behind it has nothing to tap that dismisses it, so
+    // without this the only way out was the Search key.
+    func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
+        searchBar.setShowsCancelButton(true, animated: true)
+    }
+
+    func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
+        searchBar.setShowsCancelButton(false, animated: true)
+    }
+
+    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.text = ""
+        searchBar.resignFirstResponder()
+        applyFilter("")
+    }
+
     private func applyFilter(_ text: String) {
         let q = text.trimmingCharacters(in: .whitespaces).lowercased()
         shown = q.isEmpty ? all : all.filter { $0.name.lowercased().range(of: q) != nil }

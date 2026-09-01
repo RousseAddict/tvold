@@ -56,6 +56,7 @@
 		BB5C073A2B38 /* TranscodeProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4C073A2B38 /* TranscodeProbe.swift */; };
 		BB5F064BE62D /* TSRemuxer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4F064BE62D /* TSRemuxer.swift */; };
 		BB5B363700CA /* SegmentTranscoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4B363700CA /* SegmentTranscoder.swift */; };
+		BB5E7A924212 /* Icons.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4E7A924212 /* Icons.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -130,6 +131,7 @@
 		BB4C073A2B38 /* TranscodeProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TranscodeProbe.swift"; sourceTree = "<group>"; };
 		BB4F064BE62D /* TSRemuxer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TSRemuxer.swift"; sourceTree = "<group>"; };
 		BB4B363700CA /* SegmentTranscoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SegmentTranscoder.swift"; sourceTree = "<group>"; };
+		BB4E7A924212 /* Icons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Icons.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -180,6 +182,7 @@
 		A34362D42FD764210064ADE1 /* tvold */ = {
 			isa = PBXGroup;
 			children = (
+				BB4E7A924212 /* Icons.swift */,
 				BB4B363700CA /* SegmentTranscoder.swift */,
 				BB4F064BE62D /* TSRemuxer.swift */,
 				BB49466A8444 /* TSDemuxer.swift */,
@@ -398,6 +401,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB5E7A924212 /* Icons.swift in Sources */,
 				BB5B363700CA /* SegmentTranscoder.swift in Sources */,
 				BB5F064BE62D /* TSRemuxer.swift in Sources */,
 				BB59466A8444 /* TSDemuxer.swift in Sources */,
