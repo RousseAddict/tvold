@@ -50,6 +50,12 @@
 		BB5B176BBF07 /* Icons/Icon-Notification-20@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4B176BBF07 /* Icons/Icon-Notification-20@3x.png */; };
 		BB5D33E952B3 /* Icons/Icon-Spotlight-40@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4D33E952B3 /* Icons/Icon-Spotlight-40@2x.png */; };
 		BB5D393B2E9C /* Icons/Icon-Spotlight-40@3x.png in Resources */ = {isa = PBXBuildFile; fileRef = BB4D393B2E9C /* Icons/Icon-Spotlight-40@3x.png */; };
+		BB5BE1EF88AD /* AACEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4BE1EF88AD /* AACEncoder.swift */; };
+		BB59466A8444 /* TSDemuxer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB49466A8444 /* TSDemuxer.swift */; };
+		BB5D43A9AE0B /* AC3Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4D43A9AE0B /* AC3Decoder.swift */; };
+		BB5C073A2B38 /* TranscodeProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4C073A2B38 /* TranscodeProbe.swift */; };
+		BB5F064BE62D /* TSRemuxer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4F064BE62D /* TSRemuxer.swift */; };
+		BB5B363700CA /* SegmentTranscoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4B363700CA /* SegmentTranscoder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -118,6 +124,12 @@
 		BB4B176BBF07 /* Icons/Icon-Notification-20@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Notification-20@3x.png"; sourceTree = "<group>"; };
 		BB4D33E952B3 /* Icons/Icon-Spotlight-40@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Spotlight-40@2x.png"; sourceTree = "<group>"; };
 		BB4D393B2E9C /* Icons/Icon-Spotlight-40@3x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Icons/Icon-Spotlight-40@3x.png"; sourceTree = "<group>"; };
+		BB4BE1EF88AD /* AACEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AACEncoder.swift; sourceTree = "<group>"; };
+		BB49466A8444 /* TSDemuxer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TSDemuxer.swift"; sourceTree = "<group>"; };
+		BB4D43A9AE0B /* AC3Decoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AC3Decoder.swift"; sourceTree = "<group>"; };
+		BB4C073A2B38 /* TranscodeProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TranscodeProbe.swift"; sourceTree = "<group>"; };
+		BB4F064BE62D /* TSRemuxer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TSRemuxer.swift"; sourceTree = "<group>"; };
+		BB4B363700CA /* SegmentTranscoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SegmentTranscoder.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -168,6 +180,12 @@
 		A34362D42FD764210064ADE1 /* tvold */ = {
 			isa = PBXGroup;
 			children = (
+				BB4B363700CA /* SegmentTranscoder.swift */,
+				BB4F064BE62D /* TSRemuxer.swift */,
+				BB49466A8444 /* TSDemuxer.swift */,
+				BB4D43A9AE0B /* AC3Decoder.swift */,
+				BB4C073A2B38 /* TranscodeProbe.swift */,
+				BB4BE1EF88AD /* AACEncoder.swift */,
 				BB41C371751C /* Icons/Icon-Small.png */,
 				BB4F390B2F8A /* Icons/Icon-Small@2x.png */,
 				BB4891FADE29 /* Icons/Icon-Small@3x.png */,
@@ -380,6 +398,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB5B363700CA /* SegmentTranscoder.swift in Sources */,
+				BB5F064BE62D /* TSRemuxer.swift in Sources */,
+				BB59466A8444 /* TSDemuxer.swift in Sources */,
+				BB5D43A9AE0B /* AC3Decoder.swift in Sources */,
+				BB5C073A2B38 /* TranscodeProbe.swift in Sources */,
+				BB5BE1EF88AD /* AACEncoder.swift in Sources */,
 				BB5D2D61AB4A /* JSONArrayStream.swift in Sources */,
 				BB5EFCFE2F5C /* IndexBuilder.swift in Sources */,
 				BB5DB6F8F418 /* CatalogRefresh.swift in Sources */,
@@ -554,9 +578,15 @@
 		A34362F22FD764250064ADE1 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/ThirdParty/curl/include";
-				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/ThirdParty/curl/lib";
-				OTHER_LDFLAGS = "-lcurl -lssl -lcrypto -lz";
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/ThirdParty/curl/include",
+					"$(SRCROOT)/ThirdParty/ffmpeg/include",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/ThirdParty/curl/lib",
+					"$(SRCROOT)/ThirdParty/ffmpeg/lib",
+				);
+				OTHER_LDFLAGS = "-lcurl -lssl -lcrypto -lz -lavcodec -lavutil";
 				SWIFT_OBJC_BRIDGING_HEADER = "tvold/tvold-Bridging-Header.h";
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -582,9 +612,15 @@
 		A34362F32FD764250064ADE1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				HEADER_SEARCH_PATHS = "$(SRCROOT)/ThirdParty/curl/include";
-				LIBRARY_SEARCH_PATHS = "$(SRCROOT)/ThirdParty/curl/lib";
-				OTHER_LDFLAGS = "-lcurl -lssl -lcrypto -lz";
+				HEADER_SEARCH_PATHS = (
+					"$(SRCROOT)/ThirdParty/curl/include",
+					"$(SRCROOT)/ThirdParty/ffmpeg/include",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(SRCROOT)/ThirdParty/curl/lib",
+					"$(SRCROOT)/ThirdParty/ffmpeg/lib",
+				);
+				OTHER_LDFLAGS = "-lcurl -lssl -lcrypto -lz -lavcodec -lavutil";
 				SWIFT_OBJC_BRIDGING_HEADER = "tvold/tvold-Bridging-Header.h";
 				INFOPLIST_KEY_UIBackgroundModes = audio;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;

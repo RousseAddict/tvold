@@ -1,0 +1,14 @@
+prefix=/Users/srv-admin/Documents/ios6-app/tvold/vendor/out-armv7
+exec_prefix=${prefix}
+libdir=/Users/srv-admin/Documents/ios6-app/tvold/vendor/out-armv7/lib
+includedir=/Users/srv-admin/Documents/ios6-app/tvold/vendor/out-armv7/include
+
+Name: libavcodec
+Description: FFmpeg codec library
+Version: 60.31.102
+Requires: libavutil >= 58.29.100
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavcodec -pthread -lm
+Libs.private: 
+Cflags: -I${includedir}

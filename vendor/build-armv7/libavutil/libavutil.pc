@@ -1,0 +1,14 @@
+prefix=/Users/srv-admin/Documents/ios6-app/tvold/vendor/out-armv7
+exec_prefix=${prefix}
+libdir=/Users/srv-admin/Documents/ios6-app/tvold/vendor/out-armv7/lib
+includedir=/Users/srv-admin/Documents/ios6-app/tvold/vendor/out-armv7/include
+
+Name: libavutil
+Description: FFmpeg utility library
+Version: 58.29.100
+Requires: 
+Requires.private: 
+Conflicts:
+Libs: -L${libdir}  -lavutil -pthread -lm -framework CoreFoundation -framework CoreVideo -framework CoreMedia
+Libs.private: 
+Cflags: -I${includedir}

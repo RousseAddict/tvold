@@ -194,7 +194,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
         case .catalogue: return 3
         // The revert row only exists once there is something to revert to.
         case .refresh: return ChannelIndex.hasRefreshedIndex && !running ? 2 : 1
-        case .diagnostics: return 1
+        case .diagnostics: return 3
         case .about: return 1
         }
     }
@@ -253,7 +253,8 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
 
         case .diagnostics:
             cell.selectionStyle = .blue
-            cell.textLabel?.text = "Debug log"
+            cell.textLabel?.text = ["Debug log", "AAC encoder probe",
+                                    "AC-3 transcode probe"][indexPath.row]
             cell.detailTextLabel?.text = nil
             cell.accessoryType = .disclosureIndicator
 
@@ -276,6 +277,44 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
         return f.string(from: d)
     }
 
+    // Probes do real work — encoding audio, and in the transcode case fetching
+    // a multi-megabyte segment — so they never run on the main thread. A probe
+    // run *while a stream plays* is part of the point, and blocking the main
+    // thread would stall the player and corrupt the result being measured.
+    private func runProbe(_ status: String, timeout: Double = 60,
+                          _ work: @escaping () -> String) {
+        showHeader(true)
+        setStatus(status, fraction: nil)
+        // A wedged probe is a real outcome, not a bug in the harness: the first
+        // AAC run went into the hardware encoder and never returned. Without
+        // this the screen just says "Probing…" forever and the finding is only
+        // visible by reading the log afterwards. `done` is only ever touched on
+        // the main thread, so the flag needs no locking.
+        var done = false
+        DispatchQueue.global(priority: .default).async {
+            let text = work()
+            DispatchQueue.main.async {
+                guard !done else { return }
+                done = true
+                self.showHeader(false)
+                LogViewController.present(from: self, text: text, banner: nil)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout) {
+            guard !done else { return }
+            done = true
+            self.showHeader(false)
+            DebugLog.shared.logNow("Probe", "did not return within \(Int(timeout))s")
+            LogViewController.present(
+                from: self,
+                text: "The probe did not return within \(Int(timeout)) seconds.\n\n"
+                    + "It is still running on a background thread — the app is "
+                    + "fine. The last stage line in the debug log says which "
+                    + "phase it stopped in.",
+                banner: nil)
+        }
+    }
+
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         CrashReport.stage("settings-row-\(indexPath.section)-\(indexPath.row)")
@@ -292,7 +331,15 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
                 confirmRevert()
             }
         case .diagnostics:
-            LogViewController.present(from: self, text: DebugLog.shared.readAll(), banner: nil)
+            switch indexPath.row {
+            case 0:
+                LogViewController.present(from: self, text: DebugLog.shared.readAll(),
+                                          banner: nil)
+            case 1:
+                runProbe("Probing AAC encoder\u{2026}") { AACEncoder.probe() }
+            default:
+                runProbe("Fetching M6 segment, transcoding\u{2026}") { TranscodeProbe.run() }
+            }
         case .catalogue, .about:
             break
         }

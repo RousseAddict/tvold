@@ -1,0 +1,45 @@
+probing 16763 streams with 60 workers
+  500/16763  {'ok': 249, 'inconclusive': 101, 'unreachable': 136, 'level-high': 12, 'ac3-only': 1, 'other-video': 1}
+  1000/16763  {'ok': 482, 'inconclusive': 167, 'unreachable': 318, 'level-high': 24, 'ac3-only': 2, 'other-video': 7}
+  1500/16763  {'ok': 751, 'inconclusive': 218, 'unreachable': 483, 'level-high': 38, 'ac3-only': 2, 'other-video': 8}
+  2000/16763  {'ok': 1038, 'inconclusive': 280, 'unreachable': 610, 'level-high': 61, 'ac3-only': 2, 'other-video': 9}
+  2500/16763  {'ok': 1179, 'inconclusive': 393, 'unreachable': 846, 'level-high': 70, 'ac3-only': 3, 'other-video': 9}
+  3000/16763  {'ok': 1520, 'inconclusive': 483, 'unreachable': 895, 'level-high': 90, 'ac3-only': 3, 'other-video': 9}
+  3500/16763  {'ok': 1785, 'inconclusive': 617, 'unreachable': 971, 'level-high': 115, 'ac3-only': 3, 'other-video': 9}
+  4000/16763  {'ok': 2010, 'inconclusive': 705, 'unreachable': 1130, 'level-high': 143, 'ac3-only': 3, 'other-video': 9}
+  4500/16763  {'ok': 2209, 'inconclusive': 847, 'unreachable': 1270, 'level-high': 159, 'ac3-only': 6, 'other-video': 9}
+  5000/16763  {'ok': 2376, 'inconclusive': 991, 'unreachable': 1451, 'level-high': 167, 'ac3-only': 6, 'other-video': 9}
+  5500/16763  {'ok': 2719, 'inconclusive': 1012, 'unreachable': 1582, 'level-high': 172, 'ac3-only': 6, 'other-video': 9}
+  6000/16763  {'ok': 3093, 'inconclusive': 1041, 'unreachable': 1676, 'level-high': 174, 'ac3-only': 6, 'other-video': 10}
+  6500/16763  {'ok': 3396, 'inconclusive': 1117, 'unreachable': 1792, 'level-high': 179, 'ac3-only': 6, 'other-video': 10}
+  7000/16763  {'ok': 3659, 'inconclusive': 1172, 'unreachable': 1961, 'level-high': 191, 'ac3-only': 6, 'other-video': 11}
+  7500/16763  {'ok': 3912, 'inconclusive': 1251, 'unreachable': 2110, 'level-high': 210, 'ac3-only': 6, 'other-video': 11}
+  8000/16763  {'ok': 4198, 'inconclusive': 1319, 'unreachable': 2244, 'level-high': 221, 'ac3-only': 7, 'other-video': 11}
+  8500/16763  {'ok': 4450, 'inconclusive': 1421, 'unreachable': 2379, 'level-high': 232, 'ac3-only': 7, 'other-video': 11}
+  9000/16763  {'ok': 4704, 'inconclusive': 1511, 'unreachable': 2524, 'level-high': 243, 'ac3-only': 7, 'other-video': 11}
+  9500/16763  {'ok': 4924, 'inconclusive': 1604, 'unreachable': 2705, 'level-high': 248, 'ac3-only': 7, 'other-video': 12}
+  10000/16763  {'ok': 5138, 'inconclusive': 1674, 'unreachable': 2916, 'level-high': 253, 'ac3-only': 7, 'other-video': 12}
+  10500/16763  {'ok': 5540, 'inconclusive': 1723, 'unreachable': 2962, 'level-high': 256, 'ac3-only': 7, 'other-video': 12}
+  11000/16763  {'ok': 5774, 'inconclusive': 1776, 'unreachable': 3156, 'level-high': 275, 'ac3-only': 7, 'other-video': 12}
+  11500/16763  {'ok': 6052, 'inconclusive': 1847, 'unreachable': 3295, 'level-high': 283, 'ac3-only': 7, 'other-video': 16}
+  12000/16763  {'ok': 6443, 'inconclusive': 1880, 'unreachable': 3356, 'level-high': 294, 'ac3-only': 7, 'other-video': 20}
+  12500/16763  {'ok': 6851, 'inconclusive': 1894, 'unreachable': 3416, 'level-high': 309, 'ac3-only': 8, 'other-video': 22}
+  13000/16763  {'ok': 7239, 'inconclusive': 1924, 'unreachable': 3485, 'level-high': 321, 'ac3-only': 8, 'other-video': 23}
+  13500/16763  {'ok': 7612, 'inconclusive': 1960, 'unreachable': 3546, 'level-high': 348, 'ac3-only': 10, 'other-video': 24}
+  14000/16763  {'ok': 8024, 'inconclusive': 1977, 'unreachable': 3604, 'level-high': 361, 'ac3-only': 10, 'other-video': 24}
+  14500/16763  {'ok': 8419, 'inconclusive': 2021, 'unreachable': 3659, 'level-high': 367, 'ac3-only': 10, 'other-video': 24}
+  15000/16763  {'ok': 8718, 'inconclusive': 2078, 'unreachable': 3796, 'level-high': 369, 'ac3-only': 10, 'other-video': 29}
+  15500/16763  {'ok': 9126, 'inconclusive': 2092, 'unreachable': 3860, 'level-high': 370, 'ac3-only': 10, 'other-video': 42}
+  16000/16763  {'ok': 9536, 'inconclusive': 2099, 'unreachable': 3935, 'level-high': 370, 'ac3-only': 10, 'other-video': 50}
+  16500/16763  {'ok': 9933, 'inconclusive': 2104, 'unreachable': 4025, 'level-high': 371, 'ac3-only': 10, 'other-video': 57}
+
+=== verdicts ===
+  ok               9952   59.4%
+  unreachable      4218   25.2%
+  inconclusive     2155   12.9%
+  level-high        371    2.2%
+  other-video        57    0.3%
+  ac3-only           10    0.1%
+
+conclusive: 10390 of 16763
+ac3-only is 10 = 0.1% of conclusive

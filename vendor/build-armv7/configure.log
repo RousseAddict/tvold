@@ -1,0 +1,68 @@
+install prefix            /Users/srv-admin/Documents/ios6-app/tvold/vendor/out-armv7
+source path               /Users/srv-admin/Documents/ios6-app/tvold/vendor/ffmpeg-6.1.6
+C compiler                /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang
+C library                 
+host C compiler           gcc
+host C library            
+ARCH                      arm (cortex-a8)
+big-endian                no
+runtime cpu detection     yes
+ARMv5TE enabled           yes
+ARMv6 enabled             yes
+ARMv6T2 enabled           yes
+VFP enabled               yes
+NEON enabled              yes
+THUMB enabled             yes
+debug symbols             no
+strip symbols             yes
+optimize for size         no
+optimizations             yes
+static                    yes
+shared                    no
+postprocessing support    no
+network support           no
+threading support         pthreads
+safe bitstream reader     yes
+texi2html enabled         no
+perl enabled              yes
+pod2man enabled           yes
+makeinfo enabled          yes
+makeinfo supports HTML    no
+xmllint enabled           yes
+
+External libraries:
+
+External libraries providing hardware acceleration:
+
+Libraries:
+avcodec                 avutil
+
+Programs:
+
+Enabled decoders:
+ac3                     ac3_fixed               eac3
+
+Enabled encoders:
+
+Enabled hwaccels:
+
+Enabled parsers:
+ac3
+
+Enabled demuxers:
+
+Enabled muxers:
+
+Enabled protocols:
+
+Enabled filters:
+
+Enabled bsfs:
+
+Enabled indevs:
+
+Enabled outdevs:
+
+License: LGPL version 2.1 or later
+
+WARNING: pkg-config not found, library detection may fail.

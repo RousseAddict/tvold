@@ -43,13 +43,24 @@ final class LocalStreamProxy: NSObject {
     // as a black picture that looks exactly like a proxy failure but isn't.
     var maxVariantHeight = 720
 
+    // AC-3 -> AAC conversion for the stream currently playing. Replaced rather
+    // than reset on each start(): the decoder and encoder inside it carry state
+    // across segments, and none of that state means anything for a new channel.
+    private var transcoder = SegmentTranscoder()
+
     // A registered route: where to fetch, plus the headers that fetch needs.
     // Some IPTV origins 403 without a specific User-Agent or Referer, and the
     // requirement is per-stream — so the headers travel with the URL rather
     // than being a property of the proxy.
+    //
+    // `isSegment` is true only for routes discovered inside a playlist, which
+    // is what makes it safe to buffer them whole for transcoding: an HLS
+    // segment is a few seconds and a few MB, whereas the URL the caller hands
+    // to start() may well be an endless MPEG-TS that must never be buffered.
     struct Route {
         let url: URL
         let headers: [String: String]
+        let isSegment: Bool
     }
 
     // Starts the server (if not already running) and registers `remoteURL`
@@ -74,6 +85,7 @@ final class LocalStreamProxy: NSObject {
         // table must not carry a path across from the channel just zapped away.
         routes.removeAll()
         pathByURL.removeAll()
+        transcoder = SegmentTranscoder()
         lock.unlock()
         guard ensureStarted() else {
             DebugLog.shared.log("Proxy", "start FAILED (socket unavailable) — caller will use the direct URL, TLS unprotected")
@@ -177,7 +189,8 @@ final class LocalStreamProxy: NSObject {
     // MARK: - Path <-> remote URL mapping
 
     private func registerPath(for remoteURL: URL, isPlaylist: Bool, gen: UInt64,
-                              extHint: String? = nil, headers: [String: String]) -> String {
+                              extHint: String? = nil, headers: [String: String],
+                              isSegment: Bool = false) -> String {
         lock.lock(); defer { lock.unlock() }
         // One path per remote URL, stable for the life of the stream.
         //
@@ -194,7 +207,7 @@ final class LocalStreamProxy: NSObject {
         let urlExt = LocalStreamProxy.fileExtension(of: remoteURL)
         let ext = isPlaylist ? "m3u8" : (urlExt.isEmpty ? (extHint ?? "ts") : urlExt)
         let path = "/\(nextID).\(ext)"
-        routes[path] = Route(url: remoteURL, headers: headers)
+        routes[path] = Route(url: remoteURL, headers: headers, isSegment: isSegment)
         pathByURL[key] = path
         return path
     }
@@ -250,16 +263,43 @@ final class LocalStreamProxy: NSObject {
             return
         }
         DebugLog.shared.log("Proxy", "REQ \(path)\(rangeHeader.map { " [\($0)]" } ?? "") -> \(DebugLog.redact(rt.url.absoluteString))")
+        let convertible = rt.isSegment && rangeHeader == nil
         if path.hasSuffix(".m3u8") {
             servePlaylist(route: rt, gen: gen, path: path, clientFd: fd)
+        } else if convertible && currentTranscoder.verdict == .transcode {
+            // Buffered, because a transcode cannot emit its first byte until it
+            // has seen the last one. Only for a stream already known to be
+            // AC-3: buffering to *find out* costs the whole first-segment fetch
+            // before the player sees a byte, which on a slow origin is 7-10s
+            // and reads to the player as a dead stream. A ranged request is
+            // left alone regardless — half a segment has no PMT to read and no
+            // whole AC-3 frame to convert.
+            serveSegment(route: rt, gen: gen, path: path, clientFd: fd)
         } else {
-            streamRemote(rt, gen: gen, path: path, rangeHeader: rangeHeader, clientFd: fd)
+            // An undecided stream relays normally and is judged from a prefix
+            // taken in passing, so the common case (already AAC) costs nothing.
+            streamRemote(rt, gen: gen, path: path, rangeHeader: rangeHeader,
+                         sniff: convertible && currentTranscoder.verdict == .unknown,
+                         clientFd: fd)
         }
     }
 
     private var routeCount: Int {
         lock.lock(); defer { lock.unlock() }
         return routes.count
+    }
+
+    // start() swaps the transcoder out on whichever thread the player was
+    // zapped from, while connection threads are reading it.
+    private var currentTranscoder: SegmentTranscoder {
+        lock.lock(); defer { lock.unlock() }
+        return transcoder
+    }
+
+    // fileprivate so the C body callback, which is not an extension of this
+    // class, can reach it.
+    fileprivate func inspectSniff(_ prefix: Data) {
+        currentTranscoder.inspect(prefix)
     }
 
     // Reads until the blank line that ends an HTTP request head. Bounded so a
@@ -324,6 +364,41 @@ final class LocalStreamProxy: NSObject {
         return Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
     }
 
+    // MARK: - Segments that may need transcoding (buffered)
+
+    // Fetches a segment whole, offers it to the transcoder, and sends the
+    // result with a real Content-Length. This is the slow path: it holds a few
+    // MB and cannot start sending until the fetch completes, so it is used only
+    // while the stream's audio codec is still in question or known to need
+    // converting.
+    private func serveSegment(route: Route, gen: UInt64, path: String, clientFd: Int32) {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        guard let data = CurlFetcher.fetchSyncData(url: route.url.absoluteString,
+                                                   headers: route.headers, timeout: 30) else {
+            DebugLog.shared.log("Proxy", "SEGMENT \(path) FETCH FAILED after \(ms(since: t0))ms \(DebugLog.redact(route.url.absoluteString))")
+            sendStatusOnly(clientFd, "502 Bad Gateway")
+            return
+        }
+        // The channel may have been zapped away while this was in flight, in
+        // which case the player on the other end is gone too.
+        if isSuperseded(gen) {
+            DebugLog.shared.log("Proxy", "SEGMENT \(path) superseded after fetch — dropped")
+            return
+        }
+        let body = currentTranscoder.process(data)
+        let head = "HTTP/1.1 200 OK\r\nContent-Type: video/MP2T\r\n"
+                 + "Content-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        guard LocalStreamProxy.sendAll(clientFd, Array(head.utf8)) else { return }
+        body.withUnsafeBytes { raw in
+            if let base = raw.baseAddress {
+                _ = LocalStreamProxy.sendAll(clientFd, base.assumingMemoryBound(to: UInt8.self),
+                                             body.count)
+            }
+        }
+        DebugLog.shared.log("Proxy", "SEGMENT \(path) ok \(data.count)B in / \(body.count)B out "
+                            + "in \(ms(since: t0))ms")
+    }
+
     // Resolves every non-comment URI line against the playlist's own remote
     // URL and replaces it with a local proxy path, so nested playlists and
     // segments get proxied (and, if themselves playlists, rewritten again)
@@ -358,6 +433,16 @@ final class LocalStreamProxy: NSObject {
                     || trimmed.hasPrefix("#EXT-X-VERSION") {
                     DebugLog.shared.log("Proxy", "PLAYLIST \(path) | \(trimmed)")
                 }
+                // A variant that declares AC-3 settles the question before a
+                // single segment has been fetched — and the declaration has to
+                // change with it, because by the time the player reads one of
+                // these segments the audio inside will be AAC.
+                var line = line
+                if trimmed.hasPrefix("#EXT-X-STREAM-INF"),
+                   let recoded = SegmentTranscoder.rewriteCodecs(line) {
+                    currentTranscoder.declareAC3()
+                    line = recoded
+                }
                 // A tag can carry a URI in an attribute instead of on a line of
                 // its own — #EXT-X-MEDIA for alternate audio or subtitles,
                 // #EXT-X-KEY for an AES key, #EXT-X-MAP for an fMP4 init
@@ -375,8 +460,10 @@ final class LocalStreamProxy: NSObject {
             guard let resolved = URL(string: trimmed, relativeTo: baseURL)?.absoluteURL else { return line }
             // Children inherit the parent's headers: the origin that demands a
             // Referer for the master playlist demands it for the segments too.
-            return registerPath(for: resolved, isPlaylist: LocalStreamProxy.isPlaylistURL(resolved),
-                                gen: gen, headers: route.headers)
+            let childIsPlaylist = LocalStreamProxy.isPlaylistURL(resolved)
+            return registerPath(for: resolved, isPlaylist: childIsPlaylist,
+                                gen: gen, headers: route.headers,
+                                isSegment: !childIsPlaylist)
         }
         DebugLog.shared.log("Proxy", "PLAYLIST \(path) rewrote \(uriCount) URI(s) in \(ms(since: t0))ms")
         return Data(rewritten.joined(separator: "\n").utf8)
@@ -402,6 +489,10 @@ final class LocalStreamProxy: NSObject {
         else { return nil }
         // Same inheritance rule as a bare URI line: an alternate rendition is
         // served by the origin that demanded the parent's headers.
+        //
+        // Not marked as a segment even when it is not a playlist: an
+        // #EXT-X-KEY URI is a 16-byte key and an #EXT-X-MAP is an init segment,
+        // neither of which has any audio to convert.
         let local = registerPath(for: resolved,
                                  isPlaylist: LocalStreamProxy.isPlaylistURL(resolved),
                                  gen: gen, headers: headers)
@@ -467,10 +558,12 @@ final class LocalStreamProxy: NSObject {
 
     // MARK: - Segments / direct streams (true streaming — relayed as they arrive)
 
-    private func streamRemote(_ route: Route, gen: UInt64, path: String, rangeHeader: String?, clientFd: Int32) {
+    private func streamRemote(_ route: Route, gen: UInt64, path: String, rangeHeader: String?,
+                              sniff: Bool = false, clientFd: Int32) {
         let t0 = CFAbsoluteTimeGetCurrent()
         let remote = route.url
         let conn = ProxyConn(clientFd: clientFd, gen: gen, proxy: self)
+        if sniff { conn.sniff = Data() }
         let connPtr = Unmanaged.passUnretained(conn).toOpaque()
 
         let h = curl_bridge_init()
@@ -498,6 +591,13 @@ final class LocalStreamProxy: NSObject {
         let rc = curl_bridge_perform(h)
         let httpCode = curl_bridge_response_code(h)
         let elapsed = ms(since: t0)
+
+        // A segment shorter than the sniff window ends without the callback
+        // ever reaching the limit, so whatever was collected is judged here.
+        if let prefix = conn.sniff, !prefix.isEmpty {
+            conn.sniff = nil
+            inspectSniff(prefix)
+        }
 
         // Upstream said this is a playlist even though the route wasn't
         // registered as one. Relaying it verbatim would leave its relative
@@ -573,6 +673,12 @@ private final class ProxyConn {
     var upstreamIsPlaylist = false
     var needsPlaylistRetry = false
 
+    // Copy of the first bytes of the body, kept only while the stream's audio
+    // codec is still unknown, and handed to the transcoder to read the PMT out
+    // of. Set to nil once used so the rest of the segment is pure relay again.
+    var sniff: Data?
+    static let sniffBytes = 128 * 1024
+
     init(clientFd: Int32, gen: UInt64, proxy: LocalStreamProxy) {
         self.clientFd = clientFd
         self.gen = gen
@@ -632,6 +738,18 @@ private let proxyBodyCallback: @convention(c) (UnsafeRawPointer?, Int, Int, Unsa
         return 0
     }
     conn.bytesRelayed += bytes
+    if var prefix = conn.sniff {
+        prefix.append(ptr.assumingMemoryBound(to: UInt8.self), count: bytes)
+        if prefix.count >= ProxyConn.sniffBytes {
+            // Judged mid-segment rather than after it, so a stream that turns
+            // out to be AC-3 starts converting on its *second* segment instead
+            // of its third.
+            conn.sniff = nil
+            conn.proxy.inspectSniff(prefix)
+        } else {
+            conn.sniff = prefix
+        }
+    }
     return bytes
 }
 
