@@ -1,4 +1,5 @@
 import UIKit
+import AVFoundation
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -8,6 +9,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Before anything else: rotate the previous run's log aside and work
         // out whether that run ended on its own terms.
         CrashReport.beginSession()
+
+        // The default SoloAmbient category is silenced by the ring/silent switch;
+        // Playback ignores it. No setActive — the movie player activates it.
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
 
         let nav = UINavigationController(rootViewController: CountriesViewController())
         nav.navigationBar.barStyle = .black
