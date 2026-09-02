@@ -162,9 +162,28 @@ signed.
 
 ## Installing
 
-Currently a sideloaded IPA, via Filza or similar on a jailbroken device.
+### Recommended: via the repo (Cydia / Sileo / Zebra)
 
-A Cydia repository at **cydia.rousseaddict.online** is planned, which will make this installable the normal way. That is not up yet.
+Add this source:
+
+```
+https://cydia.rousseaddict.online
+```
+
+The repo page also exposes a direct **OTA install link**, so you can install
+straight from Safari on the device without a package manager.
+
+### Manual: sideload the IPA
+
+The prebuilt IPA lives in [`build/`](build/):
+
+| File | Target | Notes |
+|---|---|---|
+| `build/tvold_ios6.ipa` | iOS 6 to 7 | The only build. Swift runtime swapped to 5.1.5 and Mach-O version-min patched to 6.0. |
+
+The IPA is **ad-hoc signed**, so it installs on a jailbroken device (Filza,
+`ipainstaller`, AppSync) but not on a stock one. To run on a stock device you
+must re-sign it with your own certificate.
 
 ## Status
 
