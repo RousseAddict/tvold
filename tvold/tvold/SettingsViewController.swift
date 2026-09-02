@@ -214,8 +214,7 @@ final class SettingsViewController: UIViewController, UITableViewDataSource,
 
     func tableView(_ tableView: UITableView, titleForFooterInSection section: Int) -> String? {
         guard Section(rawValue: section)! == .refresh, !running else { return nil }
-        return "A refresh brings in the newest channels, but cannot check which streams "
-             + "are still alive — expect more dead ones than the bundled list has."
+        return "A refresh brings in the newest channels from iptv-org."
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {

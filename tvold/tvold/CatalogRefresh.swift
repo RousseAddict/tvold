@@ -9,8 +9,8 @@ import UIKit
 //
 // What cannot move on-device is build_index.py's --probe pass, which drops dead
 // and fMP4 streams. That is ~17k HTTP requests and is not something to run from
-// a phone, so a refreshed catalogue carries more dead entries than the bundled
-// one. The player's connect watchdog is what covers that.
+// a phone. Liveness is covered at playback time instead, by the player's connect
+// watchdog and StreamStatus.
 final class CatalogRefresh {
 
     static let shared = CatalogRefresh()

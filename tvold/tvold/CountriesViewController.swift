@@ -157,12 +157,33 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
     // MARK: - Search
 
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
-        let q = searchText.trimmingCharacters(in: .whitespaces).lowercased()
-        shown = q.isEmpty ? all : all.filter { $0.name.lowercased().range(of: q) != nil }
-        table.reloadData()
+        applyFilter(searchText)
     }
 
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
         searchBar.resignFirstResponder()
+    }
+
+    // Cancel appears only while editing, as on the channel grid: the keyboard
+    // covers most of a 3.5-inch screen and tapping the list behind it selects a
+    // country instead of dismissing.
+    func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
+        searchBar.setShowsCancelButton(true, animated: true)
+    }
+
+    func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
+        searchBar.setShowsCancelButton(false, animated: true)
+    }
+
+    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.text = ""
+        searchBar.resignFirstResponder()
+        applyFilter("")
+    }
+
+    private func applyFilter(_ text: String) {
+        let q = text.trimmingCharacters(in: .whitespaces).lowercased()
+        shown = q.isEmpty ? all : all.filter { $0.name.lowercased().range(of: q) != nil }
+        table.reloadData()
     }
 }
