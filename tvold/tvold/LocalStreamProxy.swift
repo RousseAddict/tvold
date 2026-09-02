@@ -43,6 +43,20 @@ final class LocalStreamProxy: NSObject {
     // as a black picture that looks exactly like a proxy failure but isn't.
     var maxVariantHeight = 720
 
+    // Segments kept from the live edge of a media playlist.
+    //
+    // Broadcaster packagers publish enormous DVR windows: Das Erste lists 3,600
+    // segments (464 KB) and asks to be reloaded every 2 s, hr-fernsehen and WDR
+    // the same, Asharq Discovery 14,399. iOS 6 itself parses those fine — tested
+    // in MobileSafari straight off the origin — but rewriting every URI to a
+    // local path costs ~21 ms per line on an A5, i.e. ~77 s for Das Erste, so
+    // the playlist was never served and the player timed out at 15 s.
+    //
+    // Nobody scrubs back two hours on this device. Keeping the last 30 leaves a
+    // minute of window at a 2 s target duration, far above the three target
+    // durations RFC 8216 requires.
+    var maxLiveSegments = 30
+
     // AC-3 -> AAC conversion for the stream currently playing. Replaced rather
     // than reset on each start(): the decoder and encoder inside it carry state
     // across segments, and none of that state means anything for a new channel.
@@ -350,7 +364,8 @@ final class LocalStreamProxy: NSObject {
             return
         }
         DebugLog.shared.log("Proxy", "PLAYLIST \(path) fetched \(data.count)B in \(ms(since: t0))ms")
-        let body = rewritePlaylist(data, route: route, gen: gen, path: path)
+        let trimmed = trimLiveWindow(data, path: path)
+        let body = rewritePlaylist(trimmed, route: route, gen: gen, path: path)
         let head = "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
         guard LocalStreamProxy.sendAll(clientFd, Array(head.utf8)) else { return }
         body.withUnsafeBytes { raw in
@@ -399,6 +414,125 @@ final class LocalStreamProxy: NSObject {
                             + "in \(ms(since: t0))ms")
     }
 
+    // Cuts a live media playlist down to its last `maxLiveSegments` segments
+    // before anything else touches it.
+    //
+    // This runs on the raw bytes on purpose. The cost being avoided is not just
+    // the per-line rewrite — decoding 464 KB into a String and splitting it into
+    // 10,804 of them is ~450 ms on an A5 before a single URI has been resolved.
+    // Scanning for newlines and slicing the tail costs neither.
+    //
+    // Returns `data` unchanged whenever trimming would be wrong or pointless:
+    // masters, finished/VOD playlists, anything short enough already, and
+    // encrypted or fMP4 playlists whose #EXT-X-KEY / #EXT-X-MAP tag applies
+    // forward from inside the region that would be discarded.
+    private func trimLiveWindow(_ data: Data, path: String) -> Data {
+        let t0 = CFAbsoluteTimeGetCurrent()
+
+        let bEXTINF     = Array("#EXTINF".utf8)
+        let bSTREAMINF  = Array("#EXT-X-STREAM-INF".utf8)
+        let bENDLIST    = Array("#EXT-X-ENDLIST".utf8)
+        let bVOD        = Array("#EXT-X-PLAYLIST-TYPE:VOD".utf8)
+        let bKEY        = Array("#EXT-X-KEY".utf8)
+        let bMAP        = Array("#EXT-X-MAP".utf8)
+        let bDISC       = Array("#EXT-X-DISCONTINUITY".utf8)
+
+        var segGroupStart: [Int] = []
+        var discontinuityAt: [Int] = []
+        var headerEnd = -1
+        var groupStart = 0
+        var bail = false
+
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                bail = true; return
+            }
+            let n = raw.count
+            func matches(_ off: Int, _ pat: [UInt8]) -> Bool {
+                guard off + pat.count <= n else { return false }
+                for k in 0..<pat.count where base[off + k] != pat[k] { return false }
+                return true
+            }
+            var i = 0
+            while i < n && !bail {
+                var e = i
+                while e < n && base[e] != 0x0A { e += 1 }   // \n
+                var t = e
+                if t > i && base[t - 1] == 0x0D { t -= 1 }  // \r
+                let len = t - i
+                if len > 0 {
+                    if base[i] == 0x23 {                    // '#'
+                        if matches(i, bSTREAMINF) || matches(i, bENDLIST)
+                            || matches(i, bVOD) || matches(i, bKEY) {
+                            bail = true
+                        } else if matches(i, bMAP), headerEnd >= 0 {
+                            bail = true                     // init segment mid-playlist
+                        } else if matches(i, bDISC), len == bDISC.count {
+                            // exact match only — #EXT-X-DISCONTINUITY-SEQUENCE
+                            // shares this prefix and is a header tag, not a marker
+                            discontinuityAt.append(i)
+                        } else if matches(i, bEXTINF), headerEnd < 0 {
+                            headerEnd = i
+                            groupStart = i
+                        }
+                    } else if headerEnd >= 0 {
+                        segGroupStart.append(groupStart)    // a segment URI
+                        groupStart = e + 1
+                    }
+                }
+                i = e + 1
+            }
+        }
+
+        guard !bail, headerEnd > 0, segGroupStart.count > maxLiveSegments else { return data }
+
+        let dropped = segGroupStart.count - maxLiveSegments
+        let cut = segGroupStart[dropped]
+        let droppedDiscontinuities = discontinuityAt.reduce(0) { $0 + ($1 < cut ? 1 : 0) }
+
+        let headerData = data.subdata(in: data.startIndex..<(data.startIndex + headerEnd))
+        guard let headerText = String(data: headerData, encoding: .utf8) else { return data }
+
+        // A media playlist identifies its segments by position from
+        // MEDIA-SEQUENCE, so dropping from the front without advancing it would
+        // renumber every remaining segment and break continuity across reloads.
+        var out: [String] = []
+        var sawMediaSeq = false, sawDiscSeq = false
+        for line in headerText.components(separatedBy: "\n") {
+            let t = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if t.isEmpty { continue }
+            if t.hasPrefix("#EXT-X-PROGRAM-DATE-TIME") { continue }  // belongs to a dropped segment
+            if t.hasPrefix("#EXT-X-MEDIA-SEQUENCE") {
+                sawMediaSeq = true
+                out.append("#EXT-X-MEDIA-SEQUENCE:\(intAfterColon(t) + dropped)")
+            } else if t.hasPrefix("#EXT-X-DISCONTINUITY-SEQUENCE") {
+                sawDiscSeq = true
+                out.append("#EXT-X-DISCONTINUITY-SEQUENCE:\(intAfterColon(t) + droppedDiscontinuities)")
+            } else {
+                out.append(t)
+            }
+        }
+        // Both tags default to 0 when absent, which stops being true the moment
+        // anything is dropped.
+        if !sawMediaSeq { out.append("#EXT-X-MEDIA-SEQUENCE:\(dropped)") }
+        if !sawDiscSeq && droppedDiscontinuities > 0 {
+            out.append("#EXT-X-DISCONTINUITY-SEQUENCE:\(droppedDiscontinuities)")
+        }
+
+        var body = Data((out.joined(separator: "\n") + "\n").utf8)
+        body.append(data.subdata(in: (data.startIndex + cut)..<data.endIndex))
+        DebugLog.shared.log("Proxy", "PLAYLIST \(path) trimmed \(segGroupStart.count) -> "
+                            + "\(maxLiveSegments) segs (\(data.count)B -> \(body.count)B, "
+                            + "+\(dropped) media-seq, +\(droppedDiscontinuities) disc) "
+                            + "in \(ms(since: t0))ms")
+        return body
+    }
+
+    private func intAfterColon(_ tag: String) -> Int {
+        guard let c = tag.range(of: ":") else { return 0 }
+        return Int(tag[c.upperBound...].trimmingCharacters(in: .whitespaces)) ?? 0
+    }
+
     // Resolves every non-comment URI line against the playlist's own remote
     // URL and replaces it with a local proxy path, so nested playlists and
     // segments get proxied (and, if themselves playlists, rewritten again)
@@ -415,7 +549,9 @@ final class LocalStreamProxy: NSObject {
             DebugLog.shared.log("Proxy", "PLAYLIST \(path) body is not UTF-8 — probably not a playlist at all")
             return data
         }
+        let tDecode = ms(since: t0)
         var uriCount = 0
+        let t1 = CFAbsoluteTimeGetCurrent()
         var lines = text.components(separatedBy: "\n")
         // Only master playlists carry variants, and they are a handful of
         // lines — the extra pass is free there. A media playlist can hold
@@ -423,6 +559,8 @@ final class LocalStreamProxy: NSObject {
         if text.range(of: "#EXT-X-STREAM-INF") != nil {
             lines = capVariants(lines, path: path)
         }
+        let tSplit = ms(since: t1)
+        let t2 = CFAbsoluteTimeGetCurrent()
         let baseURL = route.url
         let rewritten = lines.map { line -> String in
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -465,8 +603,16 @@ final class LocalStreamProxy: NSObject {
                                 gen: gen, headers: route.headers,
                                 isSegment: !childIsPlaylist)
         }
-        DebugLog.shared.log("Proxy", "PLAYLIST \(path) rewrote \(uriCount) URI(s) in \(ms(since: t0))ms")
-        return Data(rewritten.joined(separator: "\n").utf8)
+        let tMap = ms(since: t2)
+        let t3 = CFAbsoluteTimeGetCurrent()
+        let body = Data(rewritten.joined(separator: "\n").utf8)
+        // Broken down by phase because the total alone said only "too slow":
+        // 21 ms per line on device, with no clue whether that was the URL
+        // resolution, the dictionary bookkeeping, or Foundation string bridging.
+        DebugLog.shared.log("Proxy", "PLAYLIST \(path) rewrote \(uriCount) URI(s) of "
+                            + "\(lines.count) line(s) in \(ms(since: t0))ms "
+                            + "[decode \(tDecode) split \(tSplit) map \(tMap) join \(ms(since: t3))]")
+        return body
     }
 
     // Replaces the URI="..." attribute of a tag line with a local proxy path,
