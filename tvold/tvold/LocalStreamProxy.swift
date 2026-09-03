@@ -1,15 +1,20 @@
 import Foundation
 import Darwin
 
-// Local loopback HTTP server that fronts Jellyfin playback (HLS video and
-// direct audio streams alike) so MPMoviePlayerController/AVPlayer never talk
-// TLS directly.
+// Local HTTP server that fronts playback (HLS video and direct audio streams
+// alike) so MPMoviePlayerController/AVPlayer never talk TLS directly.
+//
+// It binds INADDR_ANY rather than loopback. AirPlay video is a *URL handoff* —
+// the receiver fetches the stream itself — so an Apple TV has to be able to
+// reach this server, and it cannot reach the phone's 127.0.0.1. Every path is
+// therefore namespaced under a per-session random token, so what is exposed on
+// the LAN for the life of a channel is not guessable.
 //
 // Neither player backend can be pointed at libcurl: MPMoviePlayerController
 // has no networking delegate hook at all, and AVPlayer's resource-loader
 // delegate only intercepts custom URL schemes, not plain http(s). Routing
 // playback through a local plain-HTTP server sidesteps both — the player
-// only ever talks unencrypted HTTP to 127.0.0.1, while every real fetch to
+// only ever talks unencrypted HTTP to this device, while every real fetch to
 // the Jellyfin server goes through libcurl + embedded OpenSSL, which — unlike
 // iOS 6/7 Secure Transport — negotiates GCM-only TLS cipher suites correctly.
 //
@@ -37,6 +42,12 @@ final class LocalStreamProxy: NSObject {
     private var nextID = 0
     private var currentGen: UInt64 = 0
 
+    // Every path of a session lives under /<token>/. The server is reachable
+    // from the whole subnet, so a bare /1.ts would be trivially guessable by
+    // anything else on the wifi; the token is minted per start() and dies with
+    // the routes it namespaces.
+    private var sessionToken = LocalStreamProxy.randomToken()
+
     // Variants taller than this are stripped from master playlists. An A5/A6
     // decoder tops out well below what a modern IPTV origin advertises, and
     // MPMoviePlayerController picks the top rung by default — which shows up
@@ -56,6 +67,21 @@ final class LocalStreamProxy: NSObject {
     // minute of window at a 2 s target duration, far above the three target
     // durations RFC 8216 requires.
     var maxLiveSegments = 30
+
+    // The segment `serveSegment` produced last, kept so a repeat request does
+    // not refetch and re-transcode it.
+    //
+    // One entry, because every duplicate observed on device was for the segment
+    // just served: a receiver that ran short re-asks immediately, either whole
+    // or by byte range. It also fixes a corruption bug — a ranged request used
+    // to fall through to the relay and be answered with a slice of the *source*
+    // AC-3 file, whose offsets do not match the transcoded output at all, so
+    // the client stitched AAC to AC-3 and the stream died a second later.
+    //
+    // Only the buffered path can do this. A relayed segment is never held whole
+    // by design and caching one would mean holding several MB per connection.
+    private var lastSegmentPath: String?
+    private var lastSegmentBody: Data?
 
     // AC-3 -> AAC conversion for the stream currently playing. Replaced rather
     // than reset on each start(): the decoder and encoder inside it carry state
@@ -99,6 +125,9 @@ final class LocalStreamProxy: NSObject {
         // table must not carry a path across from the channel just zapped away.
         routes.removeAll()
         pathByURL.removeAll()
+        lastSegmentPath = nil
+        lastSegmentBody = nil
+        sessionToken = LocalStreamProxy.randomToken()
         transcoder = SegmentTranscoder()
         lock.unlock()
         guard ensureStarted() else {
@@ -107,8 +136,90 @@ final class LocalStreamProxy: NSObject {
         }
         let path = registerPath(for: remoteURL, isPlaylist: LocalStreamProxy.isPlaylistURL(remoteURL),
                                 gen: gen, extHint: extHint, headers: headers)
-        DebugLog.shared.log("Proxy", "start gen=\(gen) \(path) -> \(DebugLog.redact(remoteURL.absoluteString))")
-        return URL(string: "http://127.0.0.1:\(port)\(path)")
+        // The host in the URL handed to the player is what an AirPlay receiver
+        // will later be told to fetch, so it has to be the phone's LAN address
+        // rather than 127.0.0.1. Local playback is unaffected — the phone
+        // reaches its own wifi address as happily as it reaches loopback.
+        let host = LocalStreamProxy.lanAddress()
+        DebugLog.shared.log("Proxy", "start gen=\(gen) host=\(host.value)"
+            + " (\(host.how)) \(path) -> \(DebugLog.redact(remoteURL.absoluteString))")
+        return URL(string: "http://\(host.value):\(port)\(path)")
+    }
+
+    // MARK: - Addressing
+
+    // The phone's IPv4 address on the local network, or loopback when there is
+    // no usable interface (cellular-only, airplane mode). `how` is carried for
+    // the log: which interface was picked is the first thing to check when an
+    // AirPlay receiver cannot reach us.
+    static func lanAddress() -> (value: String, how: String) {
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0, let first = head else {
+            return ("127.0.0.1", "getifaddrs failed")
+        }
+        defer { freeifaddrs(head) }
+
+        var best: String?
+        var bestName = ""
+        var cursor: UnsafeMutablePointer<ifaddrs>? = first
+        while let ifa = cursor {
+            cursor = ifa.pointee.ifa_next
+            guard let sa = ifa.pointee.ifa_addr else { continue }
+            guard Int32(sa.pointee.sa_family) == AF_INET else { continue }
+            let flags = ifa.pointee.ifa_flags
+            guard flags & UInt32(IFF_UP) != 0 else { continue }
+            guard flags & UInt32(IFF_LOOPBACK) == 0 else { continue }
+            let name = String(cString: ifa.pointee.ifa_name)
+            // pdp_ip* is cellular: routable to the internet but not to anything
+            // on the same room's network, which is the only thing that matters.
+            if name.hasPrefix("pdp_ip") { continue }
+            let text = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) {
+                dottedQuad($0.pointee.sin_addr.s_addr)
+            }
+            // en0 is wifi and is what an Apple TV shares a subnet with. Anything
+            // else (en1, bridge100 for personal hotspot) is a fallback only.
+            if name == "en0" { return (text, "en0") }
+            if best == nil { best = text; bestName = name }
+        }
+        if let b = best { return (b, bestName) }
+        return ("127.0.0.1", "no non-loopback IPv4 interface")
+    }
+
+    // s_addr is in network byte order, so the first octet is the low byte.
+    // Written out one octet at a time: the combined shift-and-mask expression
+    // sends the 5.6.3 type checker into a stall on this target.
+    private static func dottedQuad(_ s_addr: in_addr_t) -> String {
+        let raw = UInt32(s_addr)
+        let a: UInt32 = raw & 0xFF
+        let b: UInt32 = (raw >> 8) & 0xFF
+        let c: UInt32 = (raw >> 16) & 0xFF
+        let d: UInt32 = (raw >> 24) & 0xFF
+        return "\(a).\(b).\(c).\(d)"
+    }
+
+    // Hand-rolled rather than String(format:) — a varargs bridge binds lazily
+    // against the shipped 5.1.5 overlay and takes the process down at first use.
+    private static func randomToken() -> String {
+        let hex: [Character] = ["0", "1", "2", "3", "4", "5", "6", "7",
+                                "8", "9", "a", "b", "c", "d", "e", "f"]
+        var out = [Character]()
+        out.reserveCapacity(12)
+        for _ in 0..<12 { out.append(hex[Int(arc4random_uniform(16))]) }
+        return String(out)
+    }
+
+    // Who is on the other end of an accepted connection. Read from the socket
+    // rather than threaded through, so nothing else has to change to get it.
+    private static func peerName(_ fd: Int32) -> String {
+        var addr = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let ok = withUnsafeMutablePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getpeername(fd, $0, &len)
+            }
+        }
+        guard ok == 0 else { return "?" }
+        return dottedQuad(addr.sin_addr.s_addr)
     }
 
     func stop() {
@@ -120,6 +231,8 @@ final class LocalStreamProxy: NSObject {
         let fd = listenSocket
         listenSocket = -1
         routes.removeAll()
+        lastSegmentPath = nil
+        lastSegmentBody = nil
         lock.unlock()
         if fd >= 0 { close(fd) }
     }
@@ -146,7 +259,9 @@ final class LocalStreamProxy: NSObject {
 
         var addr = sockaddr_in()
         addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        // INADDR_ANY, not loopback: an AirPlay receiver fetches the stream
+        // itself and cannot reach the phone's 127.0.0.1.
+        addr.sin_addr.s_addr = in_addr_t(0)
         addr.sin_port = 0 // let the OS assign an ephemeral port
 
         let bound = withUnsafePointer(to: &addr) {
@@ -155,7 +270,7 @@ final class LocalStreamProxy: NSObject {
             }
         }
         guard bound == 0, listen(fd, 16) == 0 else {
-            DebugLog.shared.log("Proxy", "failed to bind/listen on loopback socket")
+            DebugLog.shared.log("Proxy", "failed to bind/listen (errno \(errno))")
             close(fd)
             return false
         }
@@ -174,7 +289,9 @@ final class LocalStreamProxy: NSObject {
         started = true
         lock.unlock()
 
-        DebugLog.shared.log("Proxy", "listening on 127.0.0.1:\(port)")
+        let lan = LocalStreamProxy.lanAddress()
+        DebugLog.shared.log("Proxy", "listening on 0.0.0.0:\(port)"
+            + " — LAN address is \(lan.value) via \(lan.how)")
 
         let accept = Thread(target: self, selector: #selector(acceptLoopEntry(_:)), object: NSNumber(value: fd))
         accept.stackSize = 256 * 1024
@@ -220,7 +337,7 @@ final class LocalStreamProxy: NSObject {
         nextID += 1
         let urlExt = LocalStreamProxy.fileExtension(of: remoteURL)
         let ext = isPlaylist ? "m3u8" : (urlExt.isEmpty ? (extHint ?? "ts") : urlExt)
-        let path = "/\(nextID).\(ext)"
+        let path = "/\(sessionToken)/\(nextID).\(ext)"
         routes[path] = Route(url: remoteURL, headers: headers, isSegment: isSegment)
         pathByURL[key] = path
         return path
@@ -266,17 +383,43 @@ final class LocalStreamProxy: NSObject {
     private func handle(connection fd: Int32) {
         defer { close(fd) }
         let gen = generation
-        guard let head = readRequestHead(fd), let (path, rangeHeader) = parseRequest(head) else {
-            DebugLog.shared.log("Proxy", "REQ unparseable request head — answering 400")
+        let peer = LocalStreamProxy.peerName(fd)
+        // A remote peer is, on this app, an AirPlay receiver pulling the stream
+        // — the one fact the whole handoff turns on, so it is called out rather
+        // than left to be inferred from an address.
+        let who = peer == "127.0.0.1" ? "local" : "REMOTE \(peer)"
+        guard let head = readRequestHead(fd),
+              let (method, path, rangeHeader, agent) = parseRequest(head) else {
+            DebugLog.shared.log("Proxy", "REQ from \(who): unparseable request head — answering 400")
             sendStatusOnly(fd, "400 Bad Request")
             return
         }
+        let ua = agent.isEmpty ? "" : " ua=\(agent)"
         guard let rt = route(for: path) else {
-            DebugLog.shared.log("Proxy", "REQ \(path) -> 404 (no such route; \(routeCount) registered)")
+            DebugLog.shared.log("Proxy", "REQ \(method) \(path) from \(who)\(ua)"
+                + " -> 404 (no such route; \(routeCount) registered)")
             sendStatusOnly(fd, "404 Not Found")
             return
         }
-        DebugLog.shared.log("Proxy", "REQ \(path)\(rangeHeader.map { " [\($0)]" } ?? "") -> \(DebugLog.redact(rt.url.absoluteString))")
+        DebugLog.shared.log("Proxy", "REQ \(method) \(path) from \(who)\(ua)"
+            + "\(rangeHeader.map { " [\($0)]" } ?? "") -> \(DebugLog.redact(rt.url.absoluteString))")
+        // AppleCoreMedia probes with HEAD before it commits to a transfer.
+        // Answering it with a body would leave a whole segment on the wire that
+        // the receiver discards; answering the status alone is what HEAD means.
+        if method == "HEAD" {
+            let type = path.hasSuffix(".m3u8")
+                ? "application/vnd.apple.mpegurl" : "video/mp2t"
+            let resp = "HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\n"
+                + "Accept-Ranges: bytes\r\nConnection: close\r\n\r\n"
+            _ = LocalStreamProxy.sendAll(fd, Array(resp.utf8))
+            return
+        }
+        // A repeat of the segment just transcoded — including the byte-range
+        // retry a receiver makes when the first delivery came up short.
+        if !path.hasSuffix(".m3u8"), let body = cachedSegment(for: path) {
+            sendCachedSegment(body, rangeHeader: rangeHeader, path: path, clientFd: fd)
+            return
+        }
         let convertible = rt.isSegment && rangeHeader == nil
         if path.hasSuffix(".m3u8") {
             servePlaylist(route: rt, gen: gen, path: path, clientFd: fd)
@@ -332,18 +475,28 @@ final class LocalStreamProxy: NSObject {
         return String(data: data, encoding: .isoLatin1)
     }
 
-    private func parseRequest(_ head: String) -> (path: String, rangeHeader: String?)? {
+    private func parseRequest(_ head: String)
+            -> (method: String, path: String, rangeHeader: String?, agent: String)? {
         let lines = head.components(separatedBy: "\r\n")
         guard let requestLine = lines.first else { return nil }
         let parts = requestLine.split(separator: " ")
         guard parts.count >= 2 else { return nil }
+        let method = String(parts[0]).uppercased()
         var path = String(parts[1])
         if let q = path.firstIndex(of: "?") { path = String(path[..<q]) }
         var rangeHeader: String?
-        for line in lines.dropFirst() where line.lowercased().hasPrefix("range:") {
-            rangeHeader = line
+        var agent = ""
+        for line in lines.dropFirst() {
+            let lower = line.lowercased()
+            if lower.hasPrefix("range:") { rangeHeader = line }
+            // An Apple TV identifies itself here (AppleCoreMedia/… AppleTV…),
+            // which is how the log tells its fetches apart from the phone's.
+            if lower.hasPrefix("user-agent:") {
+                agent = String(line.dropFirst("user-agent:".count))
+                    .trimmingCharacters(in: .whitespaces)
+            }
         }
-        return (path, rangeHeader)
+        return (method, path, rangeHeader, agent)
     }
 
     private func sendStatusOnly(_ fd: Int32, _ status: String) {
@@ -386,6 +539,78 @@ final class LocalStreamProxy: NSObject {
     // MB and cannot start sending until the fetch completes, so it is used only
     // while the stream's audio codec is still in question or known to need
     // converting.
+    private func cachedSegment(for path: String) -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        return lastSegmentPath == path ? lastSegmentBody : nil
+    }
+
+    private func cacheSegment(_ body: Data, for path: String) {
+        guard !body.isEmpty else { return }
+        lock.lock()
+        lastSegmentPath = path
+        lastSegmentBody = body
+        lock.unlock()
+    }
+
+    // Serves a segment already in hand, honouring a Range if one was asked for.
+    // The offsets here are offsets into the *transcoded* bytes, which is the
+    // whole point: they are the only ones the client's own byte count agrees
+    // with.
+    private func sendCachedSegment(_ body: Data, rangeHeader: String?, path: String,
+                                   clientFd: Int32) {
+        var start = 0
+        var end = body.count - 1
+        var partial = false
+        if let h = rangeHeader {
+            guard let r = LocalStreamProxy.parseByteRange(h, count: body.count) else {
+                DebugLog.shared.log("Proxy", "CACHED \(path) unsatisfiable range \(h)")
+                sendStatusOnly(clientFd, "416 Requested Range Not Satisfiable")
+                return
+            }
+            start = r.start
+            end = r.end
+            partial = true
+        }
+        let length = end - start + 1
+        var head = partial ? "HTTP/1.1 206 Partial Content\r\n" : "HTTP/1.1 200 OK\r\n"
+        head += "Content-Type: video/MP2T\r\nAccept-Ranges: bytes\r\n"
+        if partial {
+            head += "Content-Range: bytes \(start)-\(end)/\(body.count)\r\n"
+        }
+        head += "Content-Length: \(length)\r\nConnection: close\r\n\r\n"
+        guard LocalStreamProxy.sendAll(clientFd, Array(head.utf8)) else { return }
+        body.withUnsafeBytes { raw in
+            if let base = raw.baseAddress {
+                _ = LocalStreamProxy.sendAll(clientFd,
+                                             base.assumingMemoryBound(to: UInt8.self) + start,
+                                             length)
+            }
+        }
+        DebugLog.shared.log("Proxy", "CACHED \(path) served \(length)B"
+            + (partial ? " [\(start)-\(end)/\(body.count)]" : " (whole)")
+            + " — no refetch, no re-transcode")
+    }
+
+    // "Range: bytes=START-END", "bytes=START-" and the suffix form "bytes=-N".
+    // Returns nil when the range cannot be satisfied against `count`.
+    private static func parseByteRange(_ header: String, count: Int) -> (start: Int, end: Int)? {
+        guard count > 0, let eq = header.range(of: "bytes=") else { return nil }
+        let spec = String(header[eq.upperBound...]).trimmingCharacters(in: .whitespaces)
+        // Multi-range is legal HTTP and never sent by a media client; refusing
+        // it is safer than answering only the first part of what was asked.
+        guard spec.range(of: ",") == nil else { return nil }
+        let parts = spec.components(separatedBy: "-")
+        guard parts.count == 2 else { return nil }
+        if parts[0].isEmpty {
+            guard let n = Int(parts[1]), n > 0 else { return nil }
+            return (max(0, count - n), count - 1)
+        }
+        guard let s = Int(parts[0]), s >= 0, s < count else { return nil }
+        guard !parts[1].isEmpty else { return (s, count - 1) }
+        guard let e = Int(parts[1]), e >= s else { return nil }
+        return (s, min(e, count - 1))
+    }
+
     private func serveSegment(route: Route, gen: UInt64, path: String, clientFd: Int32) {
         let t0 = CFAbsoluteTimeGetCurrent()
         guard let data = CurlFetcher.fetchSyncData(url: route.url.absoluteString,
@@ -401,7 +626,10 @@ final class LocalStreamProxy: NSObject {
             return
         }
         let body = currentTranscoder.process(data)
-        let head = "HTTP/1.1 200 OK\r\nContent-Type: video/MP2T\r\n"
+        // Cached before sending, so a client that gives up mid-transfer and
+        // retries is answered from memory even though this send never finished.
+        cacheSegment(body, for: path)
+        let head = "HTTP/1.1 200 OK\r\nContent-Type: video/MP2T\r\nAccept-Ranges: bytes\r\n"
                  + "Content-Length: \(body.count)\r\nConnection: close\r\n\r\n"
         guard LocalStreamProxy.sendAll(clientFd, Array(head.utf8)) else { return }
         body.withUnsafeBytes { raw in

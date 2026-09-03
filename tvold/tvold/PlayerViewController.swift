@@ -24,8 +24,27 @@ final class PlayerViewController: UIViewController {
     private let statusLabel = UILabel()
     private let busy = UIActivityIndicatorView(style: .whiteLarge)
     private let favButton = UIButton(type: .custom)
+    // MPVolumeView is the only way to offer a route picker before iOS 11:
+    // AVRoutePickerView is iOS 11, and the route button cannot be built alone.
+    // It hides itself when no receiver has been discovered, so on a network
+    // without an Apple TV this is simply an empty 40pt gap.
+    private let routeView = MPVolumeView()
     private var hideTimer: Timer?
     private var connectTimer: Timer?
+    private var routeProbeTimer: Timer?
+    private var retryTimer: Timer?
+
+    // A live stream that stops has not ended — the player ran out of playlist,
+    // or a segment arrived too late. Reopening it recovers; showing a failure
+    // screen does not. Bounded so a stream that flaps does not loop forever,
+    // and the budget is restored once a run has lasted `retryBudgetWindow`.
+    private var autoRetries = 0
+    private var lastAutoRetry: Date?
+    private static let maxAutoRetries = 3
+    private static let retryBudgetWindow: TimeInterval = 60
+    // Last logged state of the route button, so the probe below writes a line
+    // when a receiver appears or goes away rather than every few seconds.
+    private var routeWasVisible: Bool?
 
     // Set when a channel has given up, cleared by the next play(). While it is
     // set the chrome does not auto-hide: there is nothing behind it to look at,
@@ -95,7 +114,24 @@ final class PlayerViewController: UIViewController {
         // After the touch layer, so the chrome ends up above it.
         buildChrome()
         CrashReport.stage("player-chrome")
+        // No API before iOS 7 reports whether a receiver exists
+        // (`areWirelessRoutesAvailable` is iOS 7), so the only signal available
+        // here is MPVolumeView hiding or showing its own route button.
+        routeProbeTimer = Timer.scheduledTimer(timeInterval: 3, target: self,
+                                               selector: #selector(probeRoutes),
+                                               userInfo: nil, repeats: true)
+        probeRoutes()
         play()
+    }
+
+    @objc private func probeRoutes() {
+        let rect = routeView.routeButtonRect(forBounds: routeView.bounds)
+        let visible = rect.width > 0 && rect.height > 0
+        guard routeWasVisible != visible else { return }
+        routeWasVisible = visible
+        DebugLog.shared.log("AirPlay", visible
+            ? "route button is showing — a receiver has been discovered"
+            : "no route button — no AirPlay receiver visible on this network")
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -117,6 +153,8 @@ final class PlayerViewController: UIViewController {
     deinit {
         hideTimer?.invalidate()
         connectTimer?.invalidate()
+        routeProbeTimer?.invalidate()
+        retryTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
         player?.stop()
         proxy.stop()
@@ -140,7 +178,7 @@ final class PlayerViewController: UIViewController {
         close.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
         chrome.addSubview(close)
 
-        nameLabel.frame = CGRect(x: 52, y: 4, width: w - 52 - 48 - 58, height: 36)
+        nameLabel.frame = CGRect(x: 52, y: 4, width: w - 202, height: 36)
         nameLabel.autoresizingMask = [.flexibleWidth]
         nameLabel.textColor = UIColor.white
         nameLabel.font = UIFont.boldSystemFont(ofSize: 14)
@@ -150,13 +188,21 @@ final class PlayerViewController: UIViewController {
         // Where this channel sits in the list being zapped through. Without it
         // a swipe gives no sense of how far along the list you are, or that it
         // wraps around at the end.
-        positionLabel.frame = CGRect(x: w - 48 - 58, y: 4, width: 58, height: 36)
+        positionLabel.frame = CGRect(x: w - 150, y: 4, width: 58, height: 36)
         positionLabel.autoresizingMask = [.flexibleLeftMargin]
         positionLabel.textColor = UIColor(white: 0.6, alpha: 1)
         positionLabel.font = UIFont.systemFont(ofSize: 11)
         positionLabel.textAlignment = .right
         positionLabel.backgroundColor = UIColor.clear
         chrome.addSubview(positionLabel)
+
+        routeView.frame = CGRect(x: w - 88, y: 4, width: 40, height: 36)
+        routeView.autoresizingMask = [.flexibleLeftMargin]
+        routeView.showsVolumeSlider = false
+        routeView.showsRouteButton = true
+        routeView.backgroundColor = UIColor.clear
+        routeView.setRouteButtonImage(Icons.image(.airplay, size: 24), for: .normal)
+        chrome.addSubview(routeView)
 
         favButton.frame = CGRect(x: w - 44, y: 4, width: 40, height: 36)
         favButton.autoresizingMask = [.flexibleLeftMargin]
@@ -267,7 +313,10 @@ final class PlayerViewController: UIViewController {
 
     // MARK: - Playback
 
-    private func play() {
+    // `autoRetry` distinguishes the watchdog reopening the same channel from a
+    // user action: only the latter gives the retry budget back.
+    private func play(autoRetry: Bool = false) {
+        if !autoRetry { autoRetries = 0 }
         nameLabel.text = current.name
         positionLabel.text = channels.count > 1 ? "\(index + 1) / \(channels.count)" : nil
         CrashReport.stage("player-labels")
@@ -302,14 +351,23 @@ final class PlayerViewController: UIViewController {
         p.controlStyle = .none
         p.scalingMode = .aspectFit
         p.shouldAutoplay = true
+        // Defaults to true since iOS 5, but the whole point of this screen now
+        // depends on it, so it is stated rather than assumed.
+        p.allowsAirPlay = true
         view.insertSubview(p.view, at: 0)
         player = p
+        DebugLog.shared.log("AirPlay", "handed the player \(DebugLog.redact(url.absoluteString))"
+            + " — this is the URL a receiver would be asked to fetch")
 
+        // tearDownPlayer() does a blanket removeObserver(self), so all three
+        // observations have to be re-established on every play().
         let nc = NotificationCenter.default
         nc.addObserver(self, selector: #selector(loadStateChanged),
                        name: .MPMoviePlayerLoadStateDidChange, object: p)
         nc.addObserver(self, selector: #selector(finished(_:)),
                        name: .MPMoviePlayerPlaybackDidFinish, object: p)
+        nc.addObserver(self, selector: #selector(airPlayChanged),
+                       name: .MPMoviePlayerIsAirPlayVideoActiveDidChange, object: p)
 
         p.prepareToPlay()
         CrashReport.stage("player-preparing")
@@ -334,6 +392,8 @@ final class PlayerViewController: UIViewController {
     private func tearDownPlayer() {
         connectTimer?.invalidate()
         connectTimer = nil
+        retryTimer?.invalidate()
+        retryTimer = nil
         NotificationCenter.default.removeObserver(self)
         player?.stop()
         player?.view.removeFromSuperview()
@@ -381,13 +441,52 @@ final class PlayerViewController: UIViewController {
         }
     }
 
+    // The handoff itself. When this fires with true, the phone has stopped
+    // decoding and the receiver is fetching from the proxy directly — which
+    // should show up moments later as REMOTE requests in the Proxy log.
+    @objc private func airPlayChanged() {
+        guard let p = player else { return }
+        let on = p.isAirPlayVideoActive
+        DebugLog.shared.log("AirPlay", "video active = \(on)")
+        if on {
+            busy.stopAnimating()
+            status("Playing on AirPlay")
+        } else if !failed {
+            status("")
+        }
+    }
+
     @objc private func finished(_ n: Notification) {
         let raw = (n.userInfo?[MPMoviePlayerPlaybackDidFinishReasonUserInfoKey]
                     as? NSNumber)?.intValue ?? -1
         // 0 = ended, 1 = user exited, 2 = playback error.
         guard raw == 2 || raw == 0 else { return }
         if raw == 2 && !becamePlayable { StreamStatus.markDead(current.url) }
+
+        // A run that lasted gets its budget back; one that keeps dropping
+        // straight away burns through it and lands on the failure screen.
+        if let last = lastAutoRetry,
+           Date().timeIntervalSince(last) > PlayerViewController.retryBudgetWindow {
+            autoRetries = 0
+        }
+        // Only for a channel that was actually playing. Reason 2 on a channel
+        // that never played is a dead stream, and reopening it just repeats the
+        // 15s watchdog wait with nothing to show for it.
+        if becamePlayable && autoRetries < PlayerViewController.maxAutoRetries {
+            autoRetries += 1
+            lastAutoRetry = Date()
+            DebugLog.shared.log("Player", "\(current.name): stopped (reason \(raw)) after playing"
+                + " — reconnecting, attempt \(autoRetries) of \(PlayerViewController.maxAutoRetries)")
+            tearDownPlayer()
+            working("Reconnecting\u{2026}")
+            retryTimer = Timer.scheduledTimer(timeInterval: 2, target: self,
+                                              selector: #selector(autoRetryFired),
+                                              userInfo: nil, repeats: false)
+            return
+        }
         fail(raw == 2 ? "Stream unavailable.\nTry Next, or Retry to try again."
                       : "Stream ended.\nTry Retry, or Next for another channel.")
     }
+
+    @objc private func autoRetryFired() { play(autoRetry: true) }
 }

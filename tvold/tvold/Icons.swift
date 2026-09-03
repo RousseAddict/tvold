@@ -20,6 +20,7 @@ enum Icon {
     case skipForward
     case close
     case retry
+    case airplay
 }
 
 enum Icons {
@@ -100,6 +101,21 @@ enum Icons {
             path.move(to: p(176.2, 99.7))
             path.addLine(to: p(224.2, 99.7))
             path.addLine(to: p(224.2, 51.7))
+
+        case .airplay:
+            // Screen outline left open along the bottom, with the triangle
+            // sitting in the gap. Stroked like everything else here, so the
+            // triangle reads as an outline rather than Apple's solid one.
+            path.move(to: p(96, 168))
+            path.addLine(to: p(48, 168))
+            path.addLine(to: p(48, 56))
+            path.addLine(to: p(208, 56))
+            path.addLine(to: p(208, 168))
+            path.addLine(to: p(160, 168))
+            path.move(to: p(128, 152))
+            path.addLine(to: p(80, 216))
+            path.addLine(to: p(176, 216))
+            path.close()
         }
 
         UIColor.white.setStroke()
