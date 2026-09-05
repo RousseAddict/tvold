@@ -237,6 +237,19 @@ final class LocalStreamProxy: NSObject {
         if fd >= 0 { close(fd) }
     }
 
+    // Marks the server as down after its accept loop gave up, so the next
+    // start() builds a fresh socket instead of handing out URLs for one that
+    // no longer has anything listening behind it. Guarded on the fd so a loop
+    // for an already-replaced socket cannot tear down its successor.
+    private func invalidateListener(_ fd: Int32) {
+        lock.lock()
+        guard started, listenSocket == fd else { lock.unlock(); return }
+        started = false
+        listenSocket = -1
+        lock.unlock()
+        close(fd)
+    }
+
     fileprivate func isSuperseded(_ gen: UInt64) -> Bool {
         lock.lock(); defer { lock.unlock() }
         return gen < currentGen
@@ -299,11 +312,40 @@ final class LocalStreamProxy: NSObject {
         return true
     }
 
+    // Leaving this loop is a one-way door: nothing restarts it, and while
+    // `started` stays true ensureStarted() short-circuits, so the socket goes
+    // on completing TCP handshakes with nobody behind them and every channel
+    // fails to play until the app is force-quit. So an accept() error has to
+    // be classified rather than treated as end-of-loop.
     @objc private func acceptLoopEntry(_ arg: Any) {
         guard let fd = (arg as? NSNumber)?.int32Value else { return }
         while true {
             let client = accept(fd, nil, nil)
-            if client < 0 { break }
+            if client < 0 {
+                let err = errno
+                switch err {
+                case EBADF, EINVAL, ENOTSOCK:
+                    // stop() closed the listening socket. Orderly end.
+                    return
+                case EINTR, ECONNABORTED, EAGAIN:
+                    // A signal, or a client that hung up between the SYN and
+                    // here. Neither says anything about the listener.
+                    continue
+                case EMFILE, ENFILE:
+                    // Out of descriptors, which is transient by construction:
+                    // the connection threads already running will close theirs.
+                    DebugLog.shared.log("Proxy", "accept: out of descriptors, retrying")
+                    usleep(100 * 1000)
+                    continue
+                default:
+                    // Unexplained. Dropping the listener is recoverable — the
+                    // next start() rebuilds it — where spinning here or
+                    // returning with `started` still true is not.
+                    DebugLog.shared.log("Proxy", "accept failed errno=\(err) — dropping the listener")
+                    invalidateListener(fd)
+                    return
+                }
+            }
             var noSigPipe: Int32 = 1
             setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
             let t = Thread(target: self, selector: #selector(handleConnectionEntry(_:)), object: NSNumber(value: client))

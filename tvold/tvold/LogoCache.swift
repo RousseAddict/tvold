@@ -62,9 +62,9 @@ final class LogoCache {
         let path = dir + "/" + LogoCache.key(url)
         io.async {
             if let data = NSData(contentsOfFile: path) as Data?,
-               let img = LogoCache.decodeScaled(data) {
-                self.store(img, for: url)
-                DispatchQueue.main.async { completion(img) }
+               let decoded = LogoCache.decodeScaled(data) {
+                self.store(decoded.image, for: url)
+                DispatchQueue.main.async { completion(decoded.image) }
                 return
             }
             // Coalesce duplicates and cap the backlog. A dropped request is
@@ -92,13 +92,13 @@ final class LogoCache {
                         DispatchQueue.main.async { completion(nil) }
                         return
                     }
-                    let source = UIImage(data: data)
-                    guard let img = LogoCache.decodeScaled(data) else {
+                    guard let decoded = LogoCache.decodeScaled(data) else {
                         DebugLog.shared.log("Logos", "undecodable \(data.count)B \(url)")
                         DispatchQueue.main.async { completion(nil) }
                         return
                     }
-                    let src = source?.size ?? CGSize.zero
+                    let img = decoded.image
+                    let src = decoded.sourceSize
                     DebugLog.shared.log("Logos", "ok \(data.count)B \(Int(src.width))x\(Int(src.height))"
                         + " -> \(Int(img.size.width))x\(Int(img.size.height))"
                         + " res=\(DebugLog.residentMB())MB")
@@ -133,7 +133,12 @@ final class LogoCache {
 
     // Decodes and downsamples in one draw. UIKit drawing into an image
     // context is thread-safe (iOS 4+), so this is safe off the main thread.
-    private static func decodeScaled(_ data: Data) -> UIImage? {
+    //
+    // Hands back the source dimensions as well, because the caller wants them
+    // for the log and decoding a second time to read them would put two
+    // full-size bitmaps in a ~40MB budget at once. `img` is dead by the time
+    // this returns, so only one is ever alive.
+    private static func decodeScaled(_ data: Data) -> (image: UIImage, sourceSize: CGSize)? {
         guard let img = UIImage(data: data) else { return nil }
         let w = img.size.width, h = img.size.height
         guard w > 0, h > 0 else { return nil }
@@ -143,7 +148,8 @@ final class LogoCache {
         img.draw(in: CGRect(origin: CGPoint.zero, size: size))
         let out = UIGraphicsGetImageFromCurrentImageContext()
         UIGraphicsEndImageContext()
-        return out
+        guard let scaled = out else { return nil }
+        return (scaled, CGSize(width: w, height: h))
     }
 
     // djb2. Swift's hashValue is seeded per process, so it cannot be used for

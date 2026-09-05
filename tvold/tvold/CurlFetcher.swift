@@ -79,12 +79,32 @@ class CurlFetcher {
     // Never run from the main thread (crashes — OpenSSL threading init).
     private static let curlGlobalInit: Bool = { curl_bridge_global_init(); return true }()
 
+    // Runs the once-init and nothing else, so a main-thread caller waits for
+    // curl_global_init and not for whatever transfer curlQueue happens to be
+    // three seconds into.
+    private static let initQueue = DispatchQueue(label: "com.jellyold.curl.init")
+
     // Ensures curl_global_init has run. Callers driving libcurl directly on
     // their own background threads (e.g. the streaming proxy's per-connection
     // threads) must call this before their first curl_bridge_init(), same as
     // every method below does implicitly.
+    //
+    // The proxy's start() is called from the player on the main thread, and it
+    // is entirely possible for that to be the first curl touch of the process
+    // (launch straight into a favourite, before any logo or scan has run). So
+    // the hop is done here rather than at each call site: this is the only
+    // place that knows the init must not happen on the main thread.
+    //
+    // A DispatchGroup rather than sync { }: dispatch_sync is allowed to run
+    // its block on the calling thread, which would put the init straight back
+    // on main — the exact thing being avoided. An async hop plus a wait is
+    // guaranteed to run it somewhere else. The wait costs the main thread one
+    // curl_global_init, once per process.
     static func ensureGlobalInit() {
-        _ = curlGlobalInit
+        guard Thread.isMainThread else { _ = curlGlobalInit; return }
+        let group = DispatchGroup()
+        initQueue.async(group: group) { _ = curlGlobalInit }
+        group.wait()
     }
 
     // Synchronous GET -> Data. Caller must already be off the main thread
