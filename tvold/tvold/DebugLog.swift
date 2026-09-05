@@ -81,23 +81,33 @@ final class DebugLog {
         return Int(info.resident_size / (1024 * 1024))
     }
 
+    // The timestamp is taken here, on the caller's thread, but the *formatting*
+    // happens on `queue`. DateFormatter is not thread-safe on iOS 6, and the
+    // callers here are the proxy's per-connection threads, the six scan workers
+    // and the main thread, all at once. Formatting before the hop — which is
+    // what this used to do — raced the shared formatter on every line.
     func log(_ category: String, _ message: String) {
-        let line = format(category, message)
+        let now = Date()
         queue.async { [weak self] in
-            self?.append(line)
+            guard let self = self else { return }
+            self.append(self.format(category, message, at: now))
         }
     }
 
     // Same as log(), but returns only once the line is on disk. Launch-path
     // and pre-crash breadcrumbs must not be sitting in a queue that the crash
     // they are meant to describe will discard.
+    //
+    // queue.sync may run its block on the calling thread, but it still takes
+    // the queue, so the formatter stays exclusive either way.
     func logNow(_ category: String, _ message: String) {
-        let line = format(category, message)
-        queue.sync { self.append(line) }
+        let now = Date()
+        queue.sync { self.append(self.format(category, message, at: now)) }
     }
 
-    private func format(_ category: String, _ message: String) -> String {
-        let stamp = dateFormatter.string(from: Date())
+    // Only ever called from `queue`.
+    private func format(_ category: String, _ message: String, at date: Date) -> String {
+        let stamp = dateFormatter.string(from: date)
         return "[\(stamp)] [\(category)] \(message)\n"
     }
 

@@ -79,17 +79,21 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
         // open, and so can the sort order — so re-read the manifest rather than
         // just redrawing: `all` would otherwise still hold the countries of the
         // index that was swapped out.
-        let latest = CountrySort.current.apply(ChannelIndex.shared.countries())
-        if latest.count != all.count || CountrySort.current != appliedSort {
+        // Unconditionally, and never on the country *count*: a rebuild changes
+        // how many channels each country has and almost never how many
+        // countries there are, so the old count comparison made a refresh look
+        // like it had done nothing while `all` still held the swapped-out index.
+        all = CountrySort.current.apply(ChannelIndex.shared.countries())
+        if CountrySort.current != appliedSort {
             appliedSort = CountrySort.current
-            all = latest
             search.text = nil
-            shown = all
         }
         // The favourites count changes while the user is inside the player, and
         // a playlist can have been added or refreshed on the screens above.
         playlists = PlaylistStore.all()
-        table.reloadData()
+        // Re-filters against the new list rather than leaving `shown` holding
+        // countries that no longer exist, and reloads the table.
+        applyFilter(search.text ?? "")
         if let sel = table.indexPathForSelectedRow { table.deselectRow(at: sel, animated: true) }
     }
 

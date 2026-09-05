@@ -19,6 +19,34 @@ enum StreamStatus {
     private static let lock = NSLock()
     private static var loaded: [String: Double]?
 
+    // Set while scan() is running. A scan produces thousands of verdicts, and
+    // persisting each one rewrote the whole dictionary to UserDefaults — with
+    // the lock held, and with a plist that grows as the scan goes, so the cost
+    // was quadratic and the main thread paid for it every time a grid cell
+    // asked isDead(). Verdicts are held in memory during a scan and written
+    // once at the end. Losing them if the app dies mid-scan is fine: an entry
+    // is a hint with a shelf life, and an unknown stream counts as alive.
+    private static var scanning = false
+    private static var dirty = false
+
+    // Persists the map unless a scan is going to do it at the end anyway.
+    // Called with `lock` held.
+    private static func persist(_ m: [String: Double]) {
+        loaded = m
+        guard !scanning else { dirty = true; return }
+        UserDefaults.standard.set(m, forKey: key)
+    }
+
+    private static func flush() {
+        lock.lock()
+        let snapshot = loaded
+        let due = dirty
+        dirty = false
+        lock.unlock()
+        guard due, let m = snapshot else { return }
+        UserDefaults.standard.set(m, forKey: key)
+    }
+
     // MARK: - Store
 
     // url -> the time it was found dead. Pruned on first read of the process,
@@ -45,16 +73,14 @@ enum StreamStatus {
         lock.lock(); defer { lock.unlock() }
         var m = map()
         m[url] = Date().timeIntervalSinceReferenceDate
-        loaded = m
-        UserDefaults.standard.set(m, forKey: key)
+        persist(m)
     }
 
     static func markAlive(_ url: String) {
         lock.lock(); defer { lock.unlock() }
         var m = map()
         guard m.removeValue(forKey: url) != nil else { return }
-        loaded = m
-        UserDefaults.standard.set(m, forKey: key)
+        persist(m)
     }
 
     // MARK: - Scan
@@ -104,6 +130,7 @@ enum StreamStatus {
             // before any worker calls curl_easy_init.
             CurlFetcher.ensureGlobalInit()
 
+            lock.lock(); scanning = true; lock.unlock()
             let cursor = Cursor()
             let group = DispatchGroup()
             for _ in 0..<workers {
@@ -129,6 +156,8 @@ enum StreamStatus {
                 }
             }
             group.wait()
+            lock.lock(); scanning = false; lock.unlock()
+            flush()
             let dead = cursor.dead
             let done = cursor.done
             DispatchQueue.main.async { completion(dead, done) }

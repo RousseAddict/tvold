@@ -71,6 +71,7 @@ final class AC3Decoder {
 
         buffer.withUnsafeMutableBufferPointer { raw in
             var offset = 0
+            var stalls = 0
             while offset < raw.count {
                 var outBuf: UnsafeMutablePointer<UInt8>?
                 var outSize: Int32 = 0
@@ -79,10 +80,26 @@ final class AC3Decoder {
                     raw.baseAddress! + offset, Int32(raw.count - offset),
                     AC3Decoder.noPTS, AC3Decoder.noPTS, 0)
 
-                // A parser that consumes nothing and emits nothing would spin
-                // forever on malformed input.
-                if consumed <= 0 && outSize <= 0 { break }
-                offset += Int(consumed)
+                // Consuming nothing while emitting a frame is NORMAL: the parser
+                // had a frame buffered whose end fell on the previous buffer's
+                // boundary, and the following call makes progress. So it is the
+                // *pair* stalling that ends the loop, not the cursor alone.
+                //
+                // Breaking on `consumed <= 0` by itself abandoned the rest of
+                // every segment, which starved the encoder and made M6
+                // reconnect until it gave up (2026-09-05). Do not "simplify"
+                // this back.
+                //
+                // The two things worth guarding are a negative count, which
+                // would walk the cursor back out of the buffer, and a genuine
+                // run of no-progress calls.
+                if consumed > 0 {
+                    stalls = 0
+                    offset += Int(consumed)
+                } else {
+                    stalls += 1
+                    if outSize <= 0 || stalls > 8 { break }
+                }
 
                 guard outSize > 0, let framed = outBuf else { continue }
                 pkt.pointee.data = framed

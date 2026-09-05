@@ -171,6 +171,17 @@ final class SegmentTranscoder {
             fail("remux of \(aac.count) AAC packets failed")
             return nil
         }
+        // Packets discarded for ending before this segment's start. On the very
+        // first segment that is the encoder's priming and is correct. On every
+        // segment after it, it is audio from the previous segment's tail that
+        // the encoder had not yet emitted — real sound, ~21ms a packet, gone at
+        // the boundary. Whether that happens at all depends on how much input
+        // the encoder holds back, which is not knowable from here, so it is
+        // logged rather than guessed at.
+        if out.audioPacketsDropped > 0 {
+            DebugLog.shared.log("TX", "dropped \(out.audioPacketsDropped) of \(aac.count)"
+                + " AAC packets before segment start (carry=\(carry))")
+        }
         return out.data
     }
 

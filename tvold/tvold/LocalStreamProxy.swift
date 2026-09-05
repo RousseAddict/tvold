@@ -231,6 +231,11 @@ final class LocalStreamProxy: NSObject {
         let fd = listenSocket
         listenSocket = -1
         routes.removeAll()
+        // pathByURL is the memo that keeps a segment's path stable within a
+        // stream. It has to die with `routes` — leaving it behind means the
+        // next stream can be handed a remembered path whose route no longer
+        // exists, and it grew for the life of the process. start() clears both.
+        pathByURL.removeAll()
         lastSegmentPath = nil
         lastSegmentBody = nil
         lock.unlock()
