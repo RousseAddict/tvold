@@ -42,6 +42,21 @@ final class LocalStreamProxy: NSObject {
     private var nextID = 0
     private var currentGen: UInt64 = 0
 
+    // Payload bytes handed to a client, counted across the life of the proxy.
+    //
+    // The player's connect watchdog needs to tell "this origin is dead" apart
+    // from "this origin is working, slowly", and its own loadState cannot: a
+    // transcoded segment is fetched whole and converted before its first byte
+    // is sent, so the player sees nothing at all for the length of the fetch
+    // plus the transcode. On M6 that was ~10s of fetch, which put the first
+    // segment past the 15s watchdog and got a channel that was in the middle
+    // of working marked dead (2026-09-05).
+    //
+    // Only real payload counts — status lines and 502s do not, or a dead
+    // origin would look like progress. UInt64 because Int is 32 bits here and
+    // a long session moves more than 2 GB.
+    private var served: UInt64 = 0
+
     // Every path of a session lives under /<token>/. The server is reachable
     // from the whole subnet, so a bare /1.ts would be trivially guessable by
     // anything else on the wifi; the token is minted per start() and dies with
@@ -493,6 +508,19 @@ final class LocalStreamProxy: NSObject {
         return routes.count
     }
 
+    // fileprivate so the C body callback can reach it, like inspectSniff.
+    fileprivate func noteServed(_ bytes: Int) {
+        guard bytes > 0 else { return }
+        lock.lock()
+        served += UInt64(bytes)
+        lock.unlock()
+    }
+
+    var bytesServed: UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        return served
+    }
+
     // start() swaps the transcoder out on whichever thread the player was
     // zapped from, while connection threads are reading it.
     private var currentTranscoder: SegmentTranscoder {
@@ -573,6 +601,7 @@ final class LocalStreamProxy: NSObject {
                 _ = LocalStreamProxy.sendAll(clientFd, base.assumingMemoryBound(to: UInt8.self), body.count)
             }
         }
+        noteServed(body.count)
     }
 
     private func ms(since t0: CFAbsoluteTime) -> Int {
@@ -633,6 +662,7 @@ final class LocalStreamProxy: NSObject {
                                              length)
             }
         }
+        noteServed(length)
         DebugLog.shared.log("Proxy", "CACHED \(path) served \(length)B"
             + (partial ? " [\(start)-\(end)/\(body.count)]" : " (whole)")
             + " — no refetch, no re-transcode")
@@ -685,6 +715,7 @@ final class LocalStreamProxy: NSObject {
                                              body.count)
             }
         }
+        noteServed(body.count)
         DebugLog.shared.log("Proxy", "SEGMENT \(path) ok \(data.count)B in / \(body.count)B out "
                             + "in \(ms(since: t0))ms")
     }
@@ -1159,6 +1190,7 @@ private let proxyBodyCallback: @convention(c) (UnsafeRawPointer?, Int, Int, Unsa
         return 0
     }
     conn.bytesRelayed += bytes
+    conn.proxy.noteServed(bytes)
     if var prefix = conn.sniff {
         prefix.append(ptr.assumingMemoryBound(to: UInt8.self), count: bytes)
         if prefix.count >= ProxyConn.sniffBytes {

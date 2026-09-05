@@ -71,6 +71,14 @@ final class PlayerViewController: UIViewController {
     // "Connecting" forever.
     private static let connectTimeout: TimeInterval = 15
 
+    // How many times the watchdog will grant another `connectTimeout` because
+    // the proxy served payload during the last one. Bounded so a stream that
+    // keeps delivering bytes the player never manages to start still reports
+    // something rather than sitting on "Connecting" forever.
+    private static let maxConnectExtensions = 3
+    private var connectExtensions = 0
+    private var servedAtLastCheck: UInt64 = 0
+
     init(channels: [Channel], index: Int) {
         self.channels = channels
         self.index = index
@@ -385,6 +393,13 @@ final class PlayerViewController: UIViewController {
 
         p.prepareToPlay()
         CrashReport.stage("player-preparing")
+        connectExtensions = 0
+        armConnectWatchdog()
+    }
+
+    private func armConnectWatchdog() {
+        servedAtLastCheck = proxy.bytesServed
+        connectTimer?.invalidate()
         connectTimer = Timer.scheduledTimer(timeInterval: PlayerViewController.connectTimeout,
                                             target: self, selector: #selector(connectTimedOut),
                                             userInfo: nil, repeats: false)
@@ -394,13 +409,38 @@ final class PlayerViewController: UIViewController {
         guard let p = player,
               !(p.loadState.contains(.playable) || p.loadState.contains(.playthroughOK))
         else { return }
+
+        // Silence from the player is not silence from the network. A
+        // transcoded segment is fetched whole and converted before its first
+        // byte is sent, so a slow origin can leave the player with nothing to
+        // report while the proxy is working normally. Payload served since the
+        // last check is the evidence that the channel is alive, and it buys
+        // one more interval rather than an unbounded wait.
+        let served = proxy.bytesServed
+        if served > servedAtLastCheck && connectExtensions < PlayerViewController.maxConnectExtensions {
+            connectExtensions += 1
+            DebugLog.shared.log("Player", "connect watchdog: \(served - servedAtLastCheck)B served"
+                + " while waiting — extending (\(connectExtensions)"
+                + "/\(PlayerViewController.maxConnectExtensions))")
+            armConnectWatchdog()
+            return
+        }
+
         tearDownPlayer()
+        let waited = Int(PlayerViewController.connectTimeout) * (connectExtensions + 1)
         // Watching a channel is the most reliable liveness check there is, so
         // every play records its verdict — the explicit scan only exists to
-        // fill in the channels nobody has opened.
-        StreamStatus.markDead(current.url)
-        fail("No response after \(Int(PlayerViewController.connectTimeout))s.\n"
-             + "This channel looks dead — try Next, or Retry if you think it isn't.")
+        // fill in the channels nobody has opened. Except when the proxy did
+        // serve payload: whatever went wrong then, the origin answered, and
+        // dimming the tile for a week would be a lie.
+        if connectExtensions == 0 {
+            StreamStatus.markDead(current.url)
+            fail("No response after \(waited)s.\n"
+                 + "This channel looks dead — try Next, or Retry if you think it isn't.")
+        } else {
+            fail("Still not playing after \(waited)s.\n"
+                 + "The stream is responding but too slowly — try Retry, or Next.")
+        }
     }
 
     private func tearDownPlayer() {
