@@ -46,6 +46,13 @@ final class PlayerViewController: UIViewController {
     // when a receiver appears or goes away rather than every few seconds.
     private var routeWasVisible: Bool?
 
+    // Set the moment the screen starts going away. A Timer retains its target,
+    // so this controller outlives its own dismissal for as long as any timer is
+    // pending — and `retryTimer` firing afterwards would open a player and a
+    // proxy behind a screen the user has already left, which is heard as the
+    // channel restarting in the background with no way to stop it.
+    private var closing = false
+
     // Set when a channel has given up, cleared by the next play(). While it is
     // set the chrome does not auto-hide: there is nothing behind it to look at,
     // and hiding it is how the user ends up staring at black with no controls
@@ -150,13 +157,20 @@ final class PlayerViewController: UIViewController {
         return .allButUpsideDown
     }
 
-    deinit {
+    // Not a substitute for shutdown(): `routeProbeTimer` repeats, and a repeating
+    // Timer retains its target for as long as it is scheduled, so deinit does
+    // not run on dismissal at all until something invalidates it.
+    deinit { shutdown() }
+
+    // Everything this screen owns that keeps running on its own: the four
+    // timers, the notification observations, the player and the proxy.
+    private func shutdown() {
+        closing = true
         hideTimer?.invalidate()
-        connectTimer?.invalidate()
+        hideTimer = nil
         routeProbeTimer?.invalidate()
-        retryTimer?.invalidate()
-        NotificationCenter.default.removeObserver(self)
-        player?.stop()
+        routeProbeTimer = nil
+        tearDownPlayer()
         proxy.stop()
     }
 
@@ -283,8 +297,7 @@ final class PlayerViewController: UIViewController {
     // MARK: - Actions
 
     @objc private func closeTapped() {
-        player?.stop()
-        proxy.stop()
+        shutdown()
         dismiss(animated: true, completion: nil)
     }
 
@@ -316,6 +329,7 @@ final class PlayerViewController: UIViewController {
     // `autoRetry` distinguishes the watchdog reopening the same channel from a
     // user action: only the latter gives the retry budget back.
     private func play(autoRetry: Bool = false) {
+        guard !closing else { return }
         if !autoRetry { autoRetries = 0 }
         nameLabel.text = current.name
         positionLabel.text = channels.count > 1 ? "\(index + 1) / \(channels.count)" : nil

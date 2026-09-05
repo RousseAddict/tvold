@@ -58,6 +58,12 @@
 		BB5B363700CA /* SegmentTranscoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4B363700CA /* SegmentTranscoder.swift */; };
 		BB5E7A924212 /* Icons.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4E7A924212 /* Icons.swift */; };
 		BB56DF15A787 /* StreamStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB46DF15A787 /* StreamStatus.swift */; };
+		BB5F1737DCBC /* M3UParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4F1737DCBC /* M3UParser.swift */; };
+		BB5A9605A50E /* PlaylistBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4A9605A50E /* PlaylistBuilder.swift */; };
+		BB593E16312E /* PlaylistStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB493E16312E /* PlaylistStore.swift */; };
+		BB5947337363 /* PlaylistImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4947337363 /* PlaylistImport.swift */; };
+		BB52560A636A /* PlaylistViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB42560A636A /* PlaylistViewController.swift */; };
+		BB5055C4D225 /* AddPlaylistViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4055C4D225 /* AddPlaylistViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -134,6 +140,12 @@
 		BB4B363700CA /* SegmentTranscoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SegmentTranscoder.swift"; sourceTree = "<group>"; };
 		BB4E7A924212 /* Icons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Icons.swift"; sourceTree = "<group>"; };
 		BB46DF15A787 /* StreamStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StreamStatus.swift"; sourceTree = "<group>"; };
+		BB4F1737DCBC /* M3UParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "M3UParser.swift"; sourceTree = "<group>"; };
+		BB4A9605A50E /* PlaylistBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistBuilder.swift"; sourceTree = "<group>"; };
+		BB493E16312E /* PlaylistStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistStore.swift"; sourceTree = "<group>"; };
+		BB4947337363 /* PlaylistImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistImport.swift"; sourceTree = "<group>"; };
+		BB42560A636A /* PlaylistViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistViewController.swift"; sourceTree = "<group>"; };
+		BB4055C4D225 /* AddPlaylistViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AddPlaylistViewController.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -184,6 +196,12 @@
 		A34362D42FD764210064ADE1 /* tvold */ = {
 			isa = PBXGroup;
 			children = (
+				BB4F1737DCBC /* M3UParser.swift */,
+				BB4A9605A50E /* PlaylistBuilder.swift */,
+				BB493E16312E /* PlaylistStore.swift */,
+				BB4947337363 /* PlaylistImport.swift */,
+				BB42560A636A /* PlaylistViewController.swift */,
+				BB4055C4D225 /* AddPlaylistViewController.swift */,
 				BB46DF15A787 /* StreamStatus.swift */,
 				BB4E7A924212 /* Icons.swift */,
 				BB4B363700CA /* SegmentTranscoder.swift */,
@@ -404,6 +422,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB5F1737DCBC /* M3UParser.swift in Sources */,
+				BB5A9605A50E /* PlaylistBuilder.swift in Sources */,
+				BB593E16312E /* PlaylistStore.swift in Sources */,
+				BB5947337363 /* PlaylistImport.swift in Sources */,
+				BB52560A636A /* PlaylistViewController.swift in Sources */,
+				BB5055C4D225 /* AddPlaylistViewController.swift in Sources */,
 				BB56DF15A787 /* StreamStatus.swift in Sources */,
 				BB5E7A924212 /* Icons.swift in Sources */,
 				BB5B363700CA /* SegmentTranscoder.swift in Sources */,

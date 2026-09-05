@@ -84,7 +84,16 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
     private let spinner = UIActivityIndicatorView(style: .white)
     private let empty = UILabel()
 
-    private var code: String?
+    // Where this screen's channels come from. Favourites is the odd one: it is
+    // the only source that can change while the screen is on the stack, because
+    // the player stars and unstars from underneath it.
+    private enum Source {
+        case country(String)
+        case favorites
+        case playlist(id: String, group: String)
+    }
+
+    private let source: Source
     private var all: [Channel] = []
     private var shown: [Channel] = []
     private var memTimer: Timer?
@@ -94,17 +103,23 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
     private var savedTitle: String?
 
     init(countryName: String, code: String) {
-        self.code = code
+        self.source = .country(code)
         super.init(nibName: nil, bundle: nil)
         title = countryName
     }
 
-    init(title: String, channels: [Channel]) {
-        self.code = nil
+    init(favorites: [Channel]) {
+        self.source = .favorites
         super.init(nibName: nil, bundle: nil)
-        self.title = title
-        all = channels
-        shown = channels
+        self.title = "Favorites"
+        all = favorites
+        shown = favorites
+    }
+
+    init(playlistID: String, group: String, groupName: String) {
+        self.source = .playlist(id: playlistID, group: group)
+        super.init(nibName: nil, bundle: nil)
+        title = groupName
     }
 
     required init?(coder: NSCoder) { return nil }
@@ -177,24 +192,33 @@ final class ChannelListViewController: UIViewController, UICollectionViewDataSou
         search.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 44)
         view.addSubview(search)
 
-        if let code = code {
+        switch source {
+        case .favorites:
+            // Already in hand, and re-read on every appearance below.
+            break
+        case .country(let code):
             spinner.startAnimating()
-            ChannelIndex.shared.channels(for: code) { [weak self] list in
-                guard let self = self else { return }
-                self.spinner.stopAnimating()
-                self.all = list
-                self.applyFilter(self.search.text ?? "")
-            }
+            ChannelIndex.shared.channels(for: code) { [weak self] in self?.loaded($0) }
+        case .playlist(let id, let group):
+            spinner.startAnimating()
+            PlaylistStore.channels(for: id, group: group) { [weak self] in self?.loaded($0) }
         }
+    }
+
+    private func loaded(_ list: [Channel]) {
+        spinner.stopAnimating()
+        all = list
+        applyFilter(search.text ?? "")
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         // Favourite stars, and the favourites list itself, change in the player.
-        if code == nil {
+        switch source {
+        case .favorites:
             all = Favorites.shared.channels
             applyFilter(search.text ?? "")
-        } else {
+        case .country, .playlist:
             grid.reloadData()
         }
         // A jetsam kill leaves no trace of its own, so the memory curve has to

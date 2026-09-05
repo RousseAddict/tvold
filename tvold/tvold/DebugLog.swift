@@ -32,14 +32,29 @@ final class DebugLog {
 
     private init() {}
 
-    // Masks the Jellyfin api_key in a URL before it reaches the log, so the
-    // file can be handed around without leaking an access token.
+    // Query parameters whose value must never reach the log. api_key is
+    // Jellyfin's; the rest are how IPTV providers hand out a subscription —
+    // an Xtream get.php URL carries username and password in the clear, and
+    // the log is viewable and exportable from inside the app.
+    private static let secretParams = ["api_key", "password", "username", "token", "pass"]
+
     static func redact(_ text: String) -> String {
-        guard text.range(of: "api_key=") != nil else { return text }
-        let parts = text.components(separatedBy: "api_key=")
-        var out = parts[0] + "api_key=***"
+        var out = text
+        for name in secretParams {
+            out = mask(out, param: name)
+        }
+        return out
+    }
+
+    private static func mask(_ text: String, param: String) -> String {
+        let needle = param + "="
+        guard text.range(of: needle) != nil else { return text }
+        let parts = text.components(separatedBy: needle)
+        var out = parts[0]
         for part in parts.dropFirst() {
-            // keep whatever followed the token value (&NextParam=...)
+            out += needle + "***"
+            // Keep whatever followed the value (&NextParam=...), so the rest of
+            // the URL stays readable.
             if let amp = part.range(of: "&") {
                 out += String(part[amp.lowerBound...])
             }

@@ -36,6 +36,7 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
     private let search = UISearchBar()
     private var all: [Country] = []
     private var shown: [Country] = []
+    private var playlists: [Playlist] = []
     private var shownCrashLog = false
     private var appliedSort = CountrySort.current
 
@@ -47,6 +48,7 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
         CrashReport.stage("loading-countries")
         all = appliedSort.apply(ChannelIndex.shared.countries())
         shown = all
+        playlists = PlaylistStore.all()
         CrashReport.stage("countries-loaded-\(all.count)")
 
         search.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 44)
@@ -84,7 +86,9 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
             search.text = nil
             shown = all
         }
-        // The favourites count changes while the user is inside the player.
+        // The favourites count changes while the user is inside the player, and
+        // a playlist can have been added or refreshed on the screens above.
+        playlists = PlaylistStore.all()
         table.reloadData()
         if let sel = table.indexPathForSelectedRow { table.deselectRow(at: sel, animated: true) }
     }
@@ -107,14 +111,25 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
 
     // MARK: - Table
 
-    func numberOfSections(in tableView: UITableView) -> Int { return 2 }
+    // 0: favourites, 1: the user's own playlists plus the row that adds one,
+    // 2: the catalogue. Playlists sit above Countries because the list is short
+    // and personal, and below Favorites for the same reason.
+    func numberOfSections(in tableView: UITableView) -> Int { return 3 }
 
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return section == 0 ? 1 : shown.count
+        switch section {
+        case 0: return 1
+        case 1: return playlists.count + 1
+        default: return shown.count
+        }
     }
 
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        return section == 0 ? nil : "Countries"
+        switch section {
+        case 0: return nil
+        case 1: return "Playlists"
+        default: return "Countries"
+        }
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
@@ -126,11 +141,23 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
         cell.detailTextLabel?.textColor = UIColor(white: 0.6, alpha: 1)
         cell.accessoryType = .disclosureIndicator
 
-        if indexPath.section == 0 {
+        switch indexPath.section {
+        case 0:
             let n = Favorites.shared.channels.count
             cell.textLabel?.text = "Favorites"
             cell.detailTextLabel?.text = n == 0 ? "none yet" : "\(n)"
-        } else {
+        case 1:
+            if indexPath.row < playlists.count {
+                let p = playlists[indexPath.row]
+                cell.textLabel?.text = p.name
+                cell.detailTextLabel?.text = "\(p.count)"
+            } else {
+                cell.textLabel?.text = "Add playlist\u{2026}"
+                cell.textLabel?.textColor = UIColor(red: 0.30, green: 0.68, blue: 1, alpha: 1)
+                cell.detailTextLabel?.text = nil
+                cell.accessoryType = .none
+            }
+        default:
             let c = shown[indexPath.row]
             cell.textLabel?.text = c.name
             cell.detailTextLabel?.text = "\(c.count)"
@@ -139,19 +166,45 @@ final class CountriesViewController: UIViewController, UITableViewDataSource,
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        if indexPath.section == 0 {
+        switch indexPath.section {
+        case 0:
             let favs = Favorites.shared.channels
             if favs.isEmpty {
                 tableView.deselectRow(at: indexPath, animated: true)
                 return
             }
-            let vc = ChannelListViewController(title: "Favorites", channels: favs)
+            let vc = ChannelListViewController(favorites: favs)
             navigationController?.pushViewController(vc, animated: true)
-        } else {
+        case 1:
+            if indexPath.row < playlists.count {
+                let vc = PlaylistViewController(playlist: playlists[indexPath.row])
+                navigationController?.pushViewController(vc, animated: true)
+            } else {
+                navigationController?.pushViewController(AddPlaylistViewController(),
+                                                         animated: true)
+            }
+        default:
             let c = shown[indexPath.row]
             let vc = ChannelListViewController(countryName: c.name, code: c.code)
             navigationController?.pushViewController(vc, animated: true)
         }
+    }
+
+    // Swipe-to-delete on playlist rows only. Deleting drops the whole imported
+    // directory, not just the manifest entry — a playlist is a few MB of group
+    // files and leaving them behind would be invisible and unreclaimable.
+    func tableView(_ tableView: UITableView,
+                   canEditRowAt indexPath: IndexPath) -> Bool {
+        return indexPath.section == 1 && indexPath.row < playlists.count
+    }
+
+    func tableView(_ tableView: UITableView,
+                   commit editingStyle: UITableViewCell.EditingStyle,
+                   forRowAt indexPath: IndexPath) {
+        guard editingStyle == .delete, indexPath.row < playlists.count else { return }
+        PlaylistStore.remove(id: playlists[indexPath.row].id)
+        playlists.remove(at: indexPath.row)
+        tableView.deleteRows(at: [indexPath], with: .automatic)
     }
 
     // MARK: - Search
