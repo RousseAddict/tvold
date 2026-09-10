@@ -476,7 +476,13 @@ final class PlayerViewController: UIViewController {
     }
 
     @objc private func loadStateChanged() {
+        // TEMPORARY (iOS 12 / arm64 crash hunt, 2026-09-06). This fires the
+        // instant the player finishes parsing the master playlist, which is
+        // exactly when the log stops, so it is the other half of the search
+        // space alongside the proxy's playlist send.
+        CrashReport.stage("ls-enter")
         guard let p = player else { return }
+        CrashReport.stage("ls-loadstate-read")
         if p.loadState.contains(.playthroughOK) || p.loadState.contains(.playable) {
             // No immediate hide — play() already started the 5s auto-hide, so
             // the controls stay up long enough to actually be used.
@@ -484,12 +490,16 @@ final class PlayerViewController: UIViewController {
             connectTimer = nil
             becamePlayable = true
             failed = false
+            CrashReport.stage("ls-busy-stop")
             busy.stopAnimating()
+            CrashReport.stage("ls-mark-alive")
             StreamStatus.markAlive(current.url)
+            CrashReport.stage("ls-status")
             status("")
             // Restarts the auto-hide the failure state suppressed, so a stream
             // that recovers does not keep its controls up over the video.
             setChrome(hidden: false)
+            CrashReport.stage("ls-done")
         } else if p.loadState.contains(.stalled) {
             working("Buffering\u{2026}")
         }

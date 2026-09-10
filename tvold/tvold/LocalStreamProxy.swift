@@ -594,14 +594,25 @@ final class LocalStreamProxy: NSObject {
         DebugLog.shared.log("Proxy", "PLAYLIST \(path) fetched \(data.count)B in \(ms(since: t0))ms")
         let trimmed = trimLiveWindow(data, path: path)
         let body = rewritePlaylist(trimmed, route: route, gen: gen, path: path)
+        // TEMPORARY (iOS 12 / arm64 crash hunt, 2026-09-06). The log stops dead
+        // between rewritePlaylist's last line and the next request, so the
+        // statements below are the whole search space on this thread.
+        CrashReport.stage("pl-rewritten")
         let head = "HTTP/1.1 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-        guard LocalStreamProxy.sendAll(clientFd, Array(head.utf8)) else { return }
+        CrashReport.stage("pl-head-built")
+        guard LocalStreamProxy.sendAll(clientFd, Array(head.utf8)) else {
+            CrashReport.stage("pl-head-send-failed")
+            return
+        }
+        CrashReport.stage("pl-head-sent")
         body.withUnsafeBytes { raw in
             if let base = raw.baseAddress {
                 _ = LocalStreamProxy.sendAll(clientFd, base.assumingMemoryBound(to: UInt8.self), body.count)
             }
         }
+        CrashReport.stage("pl-body-sent")
         noteServed(body.count)
+        CrashReport.stage("pl-served")
     }
 
     private func ms(since t0: CFAbsoluteTime) -> Int {
