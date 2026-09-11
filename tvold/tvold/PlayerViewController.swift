@@ -79,6 +79,10 @@ final class PlayerViewController: UIViewController {
     private var connectExtensions = 0
     private var servedAtLastCheck: UInt64 = 0
 
+    // TEMPORARY (iOS 12 crash hunt).
+    private var heartbeatTimer: Timer?
+    private var beats = 0
+
     init(channels: [Channel], index: Int) {
         self.channels = channels
         self.index = index
@@ -178,6 +182,8 @@ final class PlayerViewController: UIViewController {
         hideTimer = nil
         routeProbeTimer?.invalidate()
         routeProbeTimer = nil
+        heartbeatTimer?.invalidate()   // TEMPORARY (iOS 12 crash hunt)
+        heartbeatTimer = nil
         tearDownPlayer()
         proxy.stop()
     }
@@ -395,6 +401,20 @@ final class PlayerViewController: UIViewController {
         CrashReport.stage("player-preparing")
         connectExtensions = 0
         armConnectWatchdog()
+        // TEMPORARY (iOS 12 crash hunt). Bounds the moment of death and proves
+        // whether the main thread is still running: the log currently just
+        // stops, which cannot distinguish a crash from a silent stall.
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = Timer.scheduledTimer(timeInterval: 1, target: self,
+                                              selector: #selector(heartbeat),
+                                              userInfo: nil, repeats: true)
+    }
+
+    @objc private func heartbeat() {
+        beats += 1
+        let ls = player.map { "\($0.loadState.rawValue)" } ?? "no-player"
+        DebugLog.shared.logNow("Beat", "\(beats)s alive — loadState=\(ls)"
+            + " served=\(proxy.bytesServed)B")
     }
 
     private func armConnectWatchdog() {
@@ -521,11 +541,24 @@ final class PlayerViewController: UIViewController {
     }
 
     @objc private func finished(_ n: Notification) {
-        let raw = (n.userInfo?[MPMoviePlayerPlaybackDidFinishReasonUserInfoKey]
-                    as? NSNumber)?.intValue ?? -1
+        // TEMPORARY (iOS 12 crash hunt). Nothing here logged until the
+        // reconnect branch, which a never-played stream cannot reach, so this
+        // whole handler was invisible. The userInfo key is a libswiftMediaPlayer
+        // overlay symbol — the lazy-binding class that crashes at first use.
+        CrashReport.stage("fin-enter")
+        let info = n.userInfo
+        CrashReport.stage("fin-userinfo")
+        let reasonKey = MPMoviePlayerPlaybackDidFinishReasonUserInfoKey
+        CrashReport.stage("fin-reasonkey")
+        let raw = (info?[reasonKey] as? NSNumber)?.intValue ?? -1
+        CrashReport.stage("fin-reason-\(raw)")
         // 0 = ended, 1 = user exited, 2 = playback error.
         guard raw == 2 || raw == 0 else { return }
-        if raw == 2 && !becamePlayable { StreamStatus.markDead(current.url) }
+        if raw == 2 && !becamePlayable {
+            CrashReport.stage("fin-mark-dead")
+            StreamStatus.markDead(current.url)
+            CrashReport.stage("fin-marked-dead")
+        }
 
         // A run that lasted gets its budget back; one that keeps dropping
         // straight away burns through it and lands on the failure screen.
@@ -548,6 +581,7 @@ final class PlayerViewController: UIViewController {
                                               userInfo: nil, repeats: false)
             return
         }
+        CrashReport.stage("fin-fail")
         fail(raw == 2 ? "Stream unavailable.\nTry Next, or Retry to try again."
                       : "Stream ended.\nTry Retry, or Next for another channel.")
     }

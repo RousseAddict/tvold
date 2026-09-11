@@ -444,18 +444,28 @@ final class LocalStreamProxy: NSObject {
 
     private func handle(connection fd: Int32) {
         defer { close(fd) }
+        // TEMPORARY (iOS 12 crash hunt). The REQ line is logged only after four
+        // calls have already run, so a death in any of them leaves no trace —
+        // and the player's next request after the master playlist never showed
+        // up in the log at all.
+        CrashReport.stage("conn-enter")
         let gen = generation
+        CrashReport.stage("conn-gen")
         let peer = LocalStreamProxy.peerName(fd)
+        CrashReport.stage("conn-peer")
         // A remote peer is, on this app, an AirPlay receiver pulling the stream
         // — the one fact the whole handoff turns on, so it is called out rather
         // than left to be inferred from an address.
         let who = peer == "127.0.0.1" ? "local" : "REMOTE \(peer)"
-        guard let head = readRequestHead(fd),
+        let rawHead = readRequestHead(fd)
+        CrashReport.stage("conn-head-read")
+        guard let head = rawHead,
               let (method, path, rangeHeader, agent) = parseRequest(head) else {
             DebugLog.shared.log("Proxy", "REQ from \(who): unparseable request head — answering 400")
             sendStatusOnly(fd, "400 Bad Request")
             return
         }
+        CrashReport.stage("conn-parsed")
         let ua = agent.isEmpty ? "" : " ua=\(agent)"
         guard let rt = route(for: path) else {
             DebugLog.shared.log("Proxy", "REQ \(method) \(path) from \(who)\(ua)"
