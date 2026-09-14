@@ -64,6 +64,7 @@
 		BB5947337363 /* PlaylistImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4947337363 /* PlaylistImport.swift */; };
 		BB52560A636A /* PlaylistViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB42560A636A /* PlaylistViewController.swift */; };
 		BB5055C4D225 /* AddPlaylistViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4055C4D225 /* AddPlaylistViewController.swift */; };
+		BB58F0D2D4B9 /* crash_trap.c in Sources */ = {isa = PBXBuildFile; fileRef = BB48F0D2D4B9 /* crash_trap.c */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -146,6 +147,8 @@
 		BB4947337363 /* PlaylistImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistImport.swift"; sourceTree = "<group>"; };
 		BB42560A636A /* PlaylistViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PlaylistViewController.swift"; sourceTree = "<group>"; };
 		BB4055C4D225 /* AddPlaylistViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AddPlaylistViewController.swift"; sourceTree = "<group>"; };
+		BB48F0D2D4B9 /* crash_trap.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = "crash_trap.c"; sourceTree = "<group>"; };
+		BB44EEC313D0 /* crash_trap.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "crash_trap.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -196,6 +199,8 @@
 		A34362D42FD764210064ADE1 /* tvold */ = {
 			isa = PBXGroup;
 			children = (
+				BB48F0D2D4B9 /* crash_trap.c */,
+				BB44EEC313D0 /* crash_trap.h */,
 				BB4F1737DCBC /* M3UParser.swift */,
 				BB4A9605A50E /* PlaylistBuilder.swift */,
 				BB493E16312E /* PlaylistStore.swift */,
@@ -422,6 +427,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB58F0D2D4B9 /* crash_trap.c in Sources */,
 				BB5F1737DCBC /* M3UParser.swift in Sources */,
 				BB5A9605A50E /* PlaylistBuilder.swift in Sources */,
 				BB593E16312E /* PlaylistStore.swift in Sources */,

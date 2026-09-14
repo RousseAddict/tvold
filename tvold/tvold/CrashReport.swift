@@ -37,6 +37,25 @@ final class CrashReport {
     private static var currentPath: String { return docs.appendingPathComponent("debug.log") }
     private static var previousPath: String { return docs.appendingPathComponent("debug-previous.log") }
 
+    // Signal handlers plus an uncaught-ObjC-exception hook.
+    //
+    // The stage breadcrumbs above can only place a crash that happens while our
+    // own code is running. When the app dies inside a framework — no frame of
+    // ours anywhere on the stack — they show the last thing we did and nothing
+    // about what actually failed. These two hooks are what produce a backtrace
+    // on a device that writes no .ips files.
+    static func installTrap() {
+        crash_trap_install(currentPath)
+        // An uncaught NSException aborts, so the SIGABRT handler would catch it
+        // — but only as a bare backtrace. This runs first and adds the name and
+        // reason, which is usually the whole answer.
+        NSSetUncaughtExceptionHandler { e in
+            let frames = e.callStackSymbols.joined(separator: "\n  ")
+            DebugLog.shared.logNow("CRASH", "uncaught \(e.name.rawValue): "
+                + "\(e.reason ?? "(no reason)")\n  \(frames)")
+        }
+    }
+
     static func beginSession() {
         crashedLastRun = UserDefaults.standard.bool(forKey: flagKey)
         previousStage = UserDefaults.standard.string(forKey: stageKey) ?? "(none recorded)"

@@ -9,6 +9,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // Before anything else: rotate the previous run's log aside and work
         // out whether that run ended on its own terms.
         CrashReport.beginSession()
+        // After beginSession, so the handler writes into this run's log rather
+        // than the one it just rotated aside.
+        CrashReport.installTrap()
 
         // The default SoloAmbient category is silenced by the ring/silent switch;
         // Playback ignores it. No setActive — the movie player activates it.

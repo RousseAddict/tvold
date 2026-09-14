@@ -27,7 +27,12 @@ APP_GROUP = "A34362D42FD764210064ADE1"      # /* tvold */ group
 APP_SOURCES = "A34362CE2FD764210064ADE1"    # app target Sources build phase
 APP_RESOURCES = "A34362D02FD764210064ADE1"  # app target Resources build phase
 
-FILE_TYPES = {".swift": "sourcecode.swift", ".png": "image.png"}
+FILE_TYPES = {".swift": "sourcecode.swift", ".png": "image.png",
+              ".c": "sourcecode.c.c", ".h": "sourcecode.c.h"}
+
+# A header belongs in the group so Xcode lists it, but never in a build phase:
+# clang would try to compile it and the build would fail.
+NO_BUILD_EXTS = {".h"}
 
 
 def uuid(prefix, name):
@@ -70,6 +75,8 @@ def main():
             f"lastKnownFileType = {FILE_TYPES[ext]}; path = \"{name}\"; "
             f"sourceTree = \"<group>\"; }};")
         group_lines.append(f"\t\t\t\t{ref} /* {name} */,")
+        if ext in NO_BUILD_EXTS:
+            continue
         build_lines.append(
             f"\t\t{bid} /* {name} in {phase_name} */ = {{isa = PBXBuildFile; "
             f"fileRef = {ref} /* {name} */; }};")
