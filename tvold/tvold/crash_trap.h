@@ -21,4 +21,14 @@ void crash_trap_install(const char *path);
 // killed" apart from "the app is wedged and could no longer write".
 void crash_trap_note(const char *message);
 
+// Appends a backtrace of the MAIN thread, taken from wherever it currently is.
+//
+// Safe to call from any other thread: it signals the main thread, and the
+// handler walks the stack it interrupted. This is the only way to see inside a
+// thread that has stopped reaching any of our own instrumentation — which is
+// exactly the state the main thread is in once playback starts on iOS 12.
+// Records the calling thread's pthread as "main" at install time, so it must be
+// installed from the main thread.
+void crash_trap_dump_main(void);
+
 #endif

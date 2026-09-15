@@ -167,8 +167,14 @@ private final class LivenessTicker: NSObject {
         // raw lines can be placed against the timestamped lines around them.
         DebugLog.shared.logNow("Live", "liveness tickers armed — raw lines follow, in ms from here")
         crash_trap_note("[LIVE] armed")
-        timer = Timer.scheduledTimer(timeInterval: LivenessTicker.interval, target: self,
-                                     selector: #selector(mainTick), userInfo: nil, repeats: true)
+        // Added to the common modes rather than scheduled plainly. A timer in
+        // the default mode alone stops firing while the run loop is in any other
+        // mode, which would look identical to a blocked thread — and "the main
+        // thread ticked zero times" is the finding this has to be able to trust.
+        let t = Timer(timeInterval: LivenessTicker.interval, target: self,
+                      selector: #selector(mainTick), userInfo: nil, repeats: true)
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
         Thread.detachNewThreadSelector(#selector(backgroundLoop), toTarget: self, with: nil)
     }
 
@@ -189,12 +195,28 @@ private final class LivenessTicker: NSObject {
         if mainTicks >= LivenessTicker.maxTicks { stop() }
     }
 
+    // Ticks the background clock and, whenever the main thread has visibly
+    // fallen behind, asks it where it is. Three dumps at spreading intervals:
+    // the first catches the stall while it is fresh, the later two show whether
+    // it is one stuck call or a thread cycling through several.
+    private static let dumpAt = [8, 40, 120]
+
     @objc private func backgroundLoop() {
         var n = 0
+        var lastSeenMainTicks = -1
         while running && n < LivenessTicker.maxTicks {
             usleep(useconds_t(LivenessTicker.interval * 1_000_000))
             n += 1
             crash_trap_note("[LIVE] bg #\(n) +\(elapsedMS())ms")
+            // Read without a lock on purpose: a torn read of a counter only ever
+            // costs one redundant backtrace, and taking a lock here would be one
+            // more thing able to wedge the instrument itself.
+            let seen = mainTicks
+            if LivenessTicker.dumpAt.contains(n) && seen == lastSeenMainTicks {
+                crash_trap_note("[LIVE] main has not ticked since #\(seen) — asking it where it is")
+                crash_trap_dump_main()
+            }
+            lastSeenMainTicks = seen
         }
     }
 }

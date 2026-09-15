@@ -405,7 +405,15 @@ final class PlayerViewController: UIViewController {
         p.prepareToPlay()
         CrashReport.stage("player-preparing")
         connectExtensions = 0
+        // TEMPORARY (iOS 12 crash hunt). Raw writes, not CrashReport.stage:
+        // stage() goes through DebugLog.logNow, which is queue.sync, so if the
+        // stall is the log queue itself then a stage breadcrumb would block on
+        // the very thing it is trying to report. armConnectWatchdog reads
+        // proxy.bytesServed, which takes the proxy lock — the first main-thread
+        // call after the last breadcrumb we ever see.
+        crash_trap_note("[MAIN] play: about to arm the connect watchdog")
         armConnectWatchdog()
+        crash_trap_note("[MAIN] play: connect watchdog armed")
         // TEMPORARY (iOS 12 crash hunt). Bounds the moment of death and proves
         // whether the main thread is still running: the log currently just
         // stops, which cannot distinguish a crash from a silent stall.
@@ -413,6 +421,7 @@ final class PlayerViewController: UIViewController {
         heartbeatTimer = Timer.scheduledTimer(timeInterval: 1, target: self,
                                               selector: #selector(heartbeat),
                                               userInfo: nil, repeats: true)
+        crash_trap_note("[MAIN] play: returning to the run loop")
     }
 
     @objc private func heartbeat() {
