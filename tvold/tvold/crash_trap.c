@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -82,6 +83,21 @@ static void handler(int sig, siginfo_t *info, void *context) {
     raise(sig);
 }
 
+void crash_trap_note(const char *message) {
+    if (!g_path[0] || !message) return;
+    int fd = open(g_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (fd < 0) return;
+    write_str(fd, message);
+    write_str(fd, "\n");
+    close(fd);
+}
+
+// exit() runs atexit handlers; a signal death and a SIGKILL do not. So this line
+// appearing means something called exit() on us, and its absence rules that out.
+static void note_exit(void) {
+    crash_trap_note("[TRAP] exit() — the process is shutting down normally");
+}
+
 void crash_trap_install(const char *path) {
     if (!path) return;
     strncpy(g_path, path, sizeof(g_path) - 1);
@@ -93,7 +109,17 @@ void crash_trap_install(const char *path) {
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
 
+    int installed = 0;
     for (int i = 0; i < kFatalCount; i++) {
-        sigaction(kFatal[i], &sa, NULL);
+        if (sigaction(kFatal[i], &sa, NULL) == 0) installed++;
     }
+    atexit(note_exit);
+
+    // Proof that the trap armed, written through the handler's own file path.
+    // Without this line, silence from the trap is ambiguous: it could mean no
+    // signal was raised, or that the trap was never there to catch one. Round
+    // three was read as the former without ever establishing the latter.
+    crash_trap_note(installed == kFatalCount
+                    ? "[TRAP] armed — all 7 fatal signal handlers installed"
+                    : "[TRAP] armed PARTIALLY — some handlers failed to install");
 }

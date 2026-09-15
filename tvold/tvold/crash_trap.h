@@ -12,4 +12,13 @@
 // never depend on the layer being investigated.
 void crash_trap_install(const char *path);
 
+// Appends one line to the same file with a bare open/write/close.
+//
+// DebugLog routes every write through a serial GCD queue, and logNow does so
+// with queue.sync — so a stalled queue silences every evidence channel at once
+// and blocks whichever thread tried to log. This primitive shares nothing with
+// it: no queue, no lock, no allocation. It is the only way to tell "the app was
+// killed" apart from "the app is wedged and could no longer write".
+void crash_trap_note(const char *message);
+
 #endif

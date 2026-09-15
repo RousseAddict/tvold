@@ -109,10 +109,92 @@ final class CrashReport {
         UserDefaults.standard.synchronize()
     }
 
+    // MARK: - Liveness tickers (TEMPORARY, iOS 12 crash hunt)
+
+    // Round three read the trap's silence as "no fatal signal was raised". That
+    // was a conclusion drawn from an instrument nobody had checked was on — and
+    // even granting it, a process that dies without running a handler has almost
+    // certainly been SIGKILLed, which iOS does both to a hung main thread and to
+    // a jetsam victim. These two tickers separate the three remaining cases:
+    //
+    //   both stop at once          -> the process was killed outright
+    //   main stops, background not -> the main thread is wedged (then killed)
+    //   both keep going            -> the app did not die where we think it did
+    //
+    // They write through crash_trap_note, not DebugLog: a stalled serial queue
+    // would silence DebugLog on every thread at once, which is indistinguishable
+    // from death in the log and is itself one of the hypotheses under test.
+    static func startLiveness() {
+        LivenessTicker.shared.start()
+    }
+
+    static func stopLiveness() {
+        LivenessTicker.shared.stop()
+    }
+
     static func previousLog() -> String {
         guard let text = try? String(contentsOfFile: previousPath, encoding: .utf8) else {
             return "(no log file was captured for the previous run)"
         }
         return text.isEmpty ? "(the previous run's log file was created but never written to)" : text
+    }
+}
+
+// TEMPORARY (iOS 12 / arm64 crash hunt). NSObject because the target/selector
+// Timer and Thread entry points are the ones that exist on iOS 6; the block
+// forms of both are iOS 10+ and would be an unrecognized selector on the
+// devices this app actually has to keep working on.
+private final class LivenessTicker: NSObject {
+    static let shared = LivenessTicker()
+
+    // 240 ticks at 250ms is a minute of coverage. Bounded on purpose: the raw
+    // writes bypass DebugLog's trimming, so an unbounded ticker would bury the
+    // rest of the log under itself.
+    private static let interval = 0.25
+    private static let maxTicks = 240
+
+    private var timer: Timer?
+    private var mainTicks = 0
+    private var running = false
+    private var began = Date()
+
+    func start() {
+        guard !running else { return }
+        running = true
+        mainTicks = 0
+        began = Date()
+        // One anchor through the normal logger, so the elapsed-ms figures in the
+        // raw lines can be placed against the timestamped lines around them.
+        DebugLog.shared.logNow("Live", "liveness tickers armed — raw lines follow, in ms from here")
+        crash_trap_note("[LIVE] armed")
+        timer = Timer.scheduledTimer(timeInterval: LivenessTicker.interval, target: self,
+                                     selector: #selector(mainTick), userInfo: nil, repeats: true)
+        Thread.detachNewThreadSelector(#selector(backgroundLoop), toTarget: self, with: nil)
+    }
+
+    func stop() {
+        running = false
+        timer?.invalidate()
+        timer = nil
+        crash_trap_note("[LIVE] stopped")
+    }
+
+    private func elapsedMS() -> Int {
+        return Int(Date().timeIntervalSince(began) * 1000)
+    }
+
+    @objc private func mainTick() {
+        mainTicks += 1
+        crash_trap_note("[LIVE] main #\(mainTicks) +\(elapsedMS())ms rss=\(DebugLog.residentMB())MB")
+        if mainTicks >= LivenessTicker.maxTicks { stop() }
+    }
+
+    @objc private func backgroundLoop() {
+        var n = 0
+        while running && n < LivenessTicker.maxTicks {
+            usleep(useconds_t(LivenessTicker.interval * 1_000_000))
+            n += 1
+            crash_trap_note("[LIVE] bg #\(n) +\(elapsedMS())ms")
+        }
     }
 }

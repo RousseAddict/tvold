@@ -184,6 +184,7 @@ final class PlayerViewController: UIViewController {
         routeProbeTimer = nil
         heartbeatTimer?.invalidate()   // TEMPORARY (iOS 12 crash hunt)
         heartbeatTimer = nil
+        CrashReport.stopLiveness()     // TEMPORARY (iOS 12 crash hunt)
         tearDownPlayer()
         proxy.stop()
     }
@@ -344,6 +345,10 @@ final class PlayerViewController: UIViewController {
     // user action: only the latter gives the retry budget back.
     private func play(autoRetry: Bool = false) {
         guard !closing else { return }
+        // TEMPORARY (iOS 12 crash hunt). Armed before anything else this method
+        // does, so the tickers are already running whichever line turns out to
+        // be the last one.
+        CrashReport.startLiveness()
         if !autoRetry { autoRetries = 0 }
         nameLabel.text = current.name
         positionLabel.text = channels.count > 1 ? "\(index + 1) / \(channels.count)" : nil
